@@ -29,6 +29,9 @@ type JSONRPCError struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+// ProtocolVersion is the MCP protocol version implemented by this server.
+const ProtocolVersion = "2025-03-26"
+
 // ========== Códigos de Erro JSON-RPC ==========
 
 const (

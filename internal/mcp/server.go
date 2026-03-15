@@ -105,11 +105,11 @@ func (s *MCPServer) handleRequest(ctx context.Context, req *JSONRPCRequest) *JSO
 // handleInitialize responds to the MCP handshake with the server capabilities.
 func (s *MCPServer) handleInitialize(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
 	result := InitializeResult{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: ProtocolVersion,
 		ServerInfo: ServerInfo{
 			Name:            "agenthub-mcp-server-runtime",
 			Version:         "1.0.0",
-			ProtocolVersion: "2024-11-05",
+			ProtocolVersion: ProtocolVersion,
 		},
 		Capabilities: ServerCapabilities{
 			Tools:     &ToolsCapability{},

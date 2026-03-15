@@ -1,5 +1,6 @@
 // Pacote main é o ponto de entrada do agenthub-mcp-server-runtime.
-// Inicia o servidor MCP em modo stdio (padrão) e opcionalmente um servidor HTTP.
+// Inicia o servidor MCP em modo stdio (padrão) e opcionalmente um servidor HTTP
+// com Streamable HTTP transport e validação OAuth 2.1 via JWT.
 package main
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/backend"
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/handler"
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
+	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/oauth"
 	skillruntime "github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/skill_runtime"
 )
 
@@ -32,6 +34,12 @@ type Config struct {
 	StdioMode bool
 	// HTTPPort is the HTTP server port (0 = disabled)
 	HTTPPort int
+	// OAuthJWKSURL is the JWKS endpoint URL for JWT validation (e.g. https://keycloak/realms/agenthub/protocol/openid-connect/certs)
+	// When empty, OAuth validation is disabled.
+	OAuthJWKSURL string
+	// OAuthIssuer is the expected JWT issuer claim (e.g. https://keycloak/realms/agenthub)
+	// When empty, the issuer claim is not validated.
+	OAuthIssuer string
 }
 
 // loadConfig loads settings from environment variables.
@@ -55,6 +63,8 @@ func loadConfig() *Config {
 		APIToken:        getEnv("AGENTHUB_API_TOKEN", ""),
 		StdioMode:       stdioMode,
 		HTTPPort:        httpPort,
+		OAuthJWKSURL:    getEnv("OAUTH_JWKS_URL", ""),
+		OAuthIssuer:     getEnv("OAUTH_ISSUER", ""),
 	}
 }
 
@@ -79,6 +89,14 @@ func main() {
 	log.Printf("Configuração: backendURL=%s, skillRuntimeURL=%s, tenantID=%s, stdioMode=%v, httpPort=%d",
 		config.BackendURL, config.SkillRuntimeURL, config.TenantID, config.StdioMode, config.HTTPPort)
 
+	// Create JWT validator (disabled when OAUTH_JWKS_URL is not set)
+	jwtValidator := oauth.NewValidator(config.OAuthJWKSURL, config.OAuthIssuer)
+	if jwtValidator.Enabled() {
+		log.Printf("OAuth: validação JWT ativa (jwks=%s, issuer=%s)", config.OAuthJWKSURL, config.OAuthIssuer)
+	} else {
+		log.Println("OAuth: validação JWT desabilitada (OAUTH_JWKS_URL não configurado)")
+	}
+
 	// Create HTTP clients
 	backendClient := backend.NewBackendClient(config.BackendURL, config.TenantID, config.APIToken)
 	skillRuntimeClient := skillruntime.NewSkillRuntimeClient(config.SkillRuntimeURL, config.TenantID)
@@ -100,7 +118,7 @@ func main() {
 
 	// Start HTTP server if configured
 	if config.HTTPPort > 0 {
-		httpServer := api.NewHTTPServer(config.HTTPPort, server)
+		httpServer := api.NewHTTPServer(config.HTTPPort, server, jwtValidator)
 		go func() {
 			log.Printf("Iniciando servidor HTTP na porta %d...", config.HTTPPort)
 			if err := httpServer.Start(); err != nil {
@@ -137,7 +155,7 @@ func main() {
 	if config.HTTPPort > 0 {
 		log.Printf("Servidor HTTP disponível em http://localhost:%d", config.HTTPPort)
 		log.Printf("Health check: GET http://localhost:%d/health", config.HTTPPort)
-		log.Printf("MCP via HTTP: POST http://localhost:%d/mcp", config.HTTPPort)
+		log.Printf("MCP via Streamable HTTP: POST http://localhost:%d/mcp", config.HTTPPort)
 	}
 
 	// Wait for interrupt signal or error
