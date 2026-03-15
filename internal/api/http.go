@@ -16,65 +16,65 @@ import (
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
 )
 
-// ProcessadorMensagem define a interface para processar uma requisição JSON-RPC
-// e retornar uma resposta. Implementada pelo MCPServidor.
-type ProcessadorMensagem interface {
-	ProcessarRequisicaoHTTP(ctx context.Context, req *mcp.RequisicaoJSONRPC) *mcp.RespostaJSONRPC
+// MessageProcessor defines the interface for processing a JSON-RPC request
+// and returning a response. Implemented by MCPServer.
+type MessageProcessor interface {
+	HandleHTTPRequest(ctx context.Context, req *mcp.JSONRPCRequest) *mcp.JSONRPCResponse
 }
 
-// ServidorHTTP gerencia o servidor HTTP do MCP Server Runtime.
-type ServidorHTTP struct {
-	porta       int
-	processador ProcessadorMensagem
-	router      *gin.Engine
-	servidor    *http.Server
+// HTTPServer manages the HTTP server of the MCP Server Runtime.
+type HTTPServer struct {
+	port      int
+	processor MessageProcessor
+	router    *gin.Engine
+	server    *http.Server
 }
 
-// NovoServidorHTTP cria um novo servidor HTTP para o MCP Server Runtime.
-func NovoServidorHTTP(porta int, processador ProcessadorMensagem) *ServidorHTTP {
+// NewHTTPServer creates a new HTTP server for the MCP Server Runtime.
+func NewHTTPServer(port int, processor MessageProcessor) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	s := &ServidorHTTP{
-		porta:       porta,
-		processador: processador,
-		router:      router,
+	s := &HTTPServer{
+		port:      port,
+		processor: processor,
+		router:    router,
 	}
 
-	s.registrarRotas()
+	s.registerRoutes()
 	return s
 }
 
-// registrarRotas configura todas as rotas HTTP do servidor.
-func (s *ServidorHTTP) registrarRotas() {
+// registerRoutes configures all HTTP routes of the server.
+func (s *HTTPServer) registerRoutes() {
 	s.router.GET("/health", s.health)
-	s.router.POST("/mcp", s.processarMensagemMCP)
-	s.router.GET("/mcp/sse", s.iniciarSSE)
+	s.router.POST("/mcp", s.handleMCPMessage)
+	s.router.GET("/mcp/sse", s.handleSSE)
 }
 
-// Iniciar inicia o servidor HTTP na porta configurada.
-func (s *ServidorHTTP) Iniciar() error {
-	s.servidor = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.porta),
+// Start starts the HTTP server on the configured port.
+func (s *HTTPServer) Start() error {
+	s.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", s.port),
 		Handler: s.router,
 	}
 
-	log.Printf("ServidorHTTP: iniciando na porta %d", s.porta)
-	return s.servidor.ListenAndServe()
+	log.Printf("HTTPServer: iniciando na porta %d", s.port)
+	return s.server.ListenAndServe()
 }
 
-// Parar realiza o shutdown graceful do servidor HTTP.
-func (s *ServidorHTTP) Parar(ctx context.Context) error {
-	if s.servidor == nil {
+// Stop performs a graceful shutdown of the HTTP server.
+func (s *HTTPServer) Stop(ctx context.Context) error {
+	if s.server == nil {
 		return nil
 	}
-	return s.servidor.Shutdown(ctx)
+	return s.server.Shutdown(ctx)
 }
 
-// health retorna o status de saúde do servidor.
+// health returns the health status of the server.
 // GET /health
-func (s *ServidorHTTP) health(c *gin.Context) {
+func (s *HTTPServer) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
 		"servico": "agenthub-mcp-server-runtime",
@@ -83,58 +83,58 @@ func (s *ServidorHTTP) health(c *gin.Context) {
 	})
 }
 
-// processarMensagemMCP recebe uma requisição JSON-RPC via HTTP e retorna a resposta.
+// handleMCPMessage receives a JSON-RPC request via HTTP and returns the response.
 // POST /mcp
-func (s *ServidorHTTP) processarMensagemMCP(c *gin.Context) {
-	corpo, err := io.ReadAll(c.Request.Body)
+func (s *HTTPServer) handleMCPMessage(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, mcp.NovoErroJSONRPC(nil, mcp.ErroParseamento, "erro ao ler corpo da requisição"))
+		c.JSON(http.StatusBadRequest, mcp.NewJSONRPCError(nil, mcp.ErrCodeParse, "erro ao ler corpo da requisição"))
 		return
 	}
 
-	var req mcp.RequisicaoJSONRPC
-	if err := json.Unmarshal(corpo, &req); err != nil {
-		c.JSON(http.StatusBadRequest, mcp.NovoErroJSONRPC(nil, mcp.ErroParseamento, "JSON inválido na requisição"))
+	var req mcp.JSONRPCRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, mcp.NewJSONRPCError(nil, mcp.ErrCodeParse, "JSON inválido na requisição"))
 		return
 	}
 
-	resposta := s.processador.ProcessarRequisicaoHTTP(c.Request.Context(), &req)
-	if resposta == nil {
-		// Notificação — sem resposta
+	response := s.processor.HandleHTTPRequest(c.Request.Context(), &req)
+	if response == nil {
+		// Notification — no response
 		c.Status(http.StatusNoContent)
 		return
 	}
 
-	c.JSON(http.StatusOK, resposta)
+	c.JSON(http.StatusOK, response)
 }
 
-// iniciarSSE mantém uma conexão SSE (Server-Sent Events) para clientes que preferem
-// o transporte HTTP persistente ao invés de stdio.
+// handleSSE maintains an SSE (Server-Sent Events) connection for clients that prefer
+// the persistent HTTP transport instead of stdio.
 // GET /mcp/sse
-func (s *ServidorHTTP) iniciarSSE(c *gin.Context) {
+func (s *HTTPServer) handleSSE(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
-	log.Printf("ServidorHTTP: cliente SSE conectado: %s", c.ClientIP())
+	log.Printf("HTTPServer: cliente SSE conectado: %s", c.ClientIP())
 
-	// Canal para enviar eventos ao cliente
-	canalEventos := make(chan string, 10)
+	// Channel to send events to the client
+	eventChan := make(chan string, 10)
 
-	// Enviar evento de conexão estabelecida
-	canalEventos <- `data: {"type":"connected","server":"agenthub-mcp-server-runtime"}` + "\n\n"
+	// Send connection established event
+	eventChan <- `data: {"type":"connected","server":"agenthub-mcp-server-runtime"}` + "\n\n"
 
 	c.Stream(func(w io.Writer) bool {
 		select {
-		case evento, ok := <-canalEventos:
+		case event, ok := <-eventChan:
 			if !ok {
 				return false
 			}
-			fmt.Fprintf(w, "%s", evento)
+			fmt.Fprintf(w, "%s", event)
 			return true
 		case <-c.Request.Context().Done():
-			log.Printf("ServidorHTTP: cliente SSE desconectado: %s", c.ClientIP())
+			log.Printf("HTTPServer: cliente SSE desconectado: %s", c.ClientIP())
 			return false
 		}
 	})

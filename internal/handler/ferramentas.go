@@ -13,94 +13,94 @@ import (
 	skillruntime "github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/skill_runtime"
 )
 
-// InterfaceClienteBackendFerramentas define as operações de backend usadas pelo handler de ferramentas.
-type InterfaceClienteBackendFerramentas interface {
-	ListarSkillsAtivas(ctx context.Context) ([]backend.SkillDTO, error)
+// BackendClientIface defines the backend operations used by the tools handler.
+type BackendClientIface interface {
+	ListActiveSkills(ctx context.Context) ([]backend.SkillDTO, error)
 }
 
-// InterfaceClienteSkillRuntime define as operações do skill-runtime usadas pelo handler de ferramentas.
-type InterfaceClienteSkillRuntime interface {
-	InvocarSkill(ctx context.Context, req skillruntime.RequisicaoInvocarSkill) (*skillruntime.ResultadoSkill, error)
+// SkillRuntimeClientIface defines the skill-runtime operations used by the tools handler.
+type SkillRuntimeClientIface interface {
+	InvokeSkill(ctx context.Context, req skillruntime.InvokeSkillRequest) (*skillruntime.SkillResult, error)
 }
 
-// HandlerFerramentas implementa a interface GerenciadorFerramentas do MCPServidor.
-// Converte skills do AgentHub para o formato MCP Tool e delega execuções ao skill-runtime.
-type HandlerFerramentas struct {
-	clienteBackend      InterfaceClienteBackendFerramentas
-	clienteSkillRuntime InterfaceClienteSkillRuntime
-	tenantID            string
+// ToolsHandlerImpl implements the ToolsHandler interface of the MCPServer.
+// Converts AgentHub skills to the MCP Tool format and delegates executions to the skill-runtime.
+type ToolsHandlerImpl struct {
+	backendClient      BackendClientIface
+	skillRuntimeClient SkillRuntimeClientIface
+	tenantID           string
 }
 
-// NovoHandlerFerramentas cria um novo handler de ferramentas MCP.
-func NovoHandlerFerramentas(
-	clienteBackend InterfaceClienteBackendFerramentas,
-	clienteSkillRuntime InterfaceClienteSkillRuntime,
+// NewToolsHandler creates a new MCP tools handler.
+func NewToolsHandler(
+	backendClient BackendClientIface,
+	skillRuntimeClient SkillRuntimeClientIface,
 	tenantID string,
-) *HandlerFerramentas {
-	return &HandlerFerramentas{
-		clienteBackend:      clienteBackend,
-		clienteSkillRuntime: clienteSkillRuntime,
-		tenantID:            tenantID,
+) *ToolsHandlerImpl {
+	return &ToolsHandlerImpl{
+		backendClient:      backendClient,
+		skillRuntimeClient: skillRuntimeClient,
+		tenantID:           tenantID,
 	}
 }
 
-// ListarFerramentas consulta as skills ativas do tenant e as converte para MCP Tools.
-// Cada skill é exposta com name=slug, description e inputSchema original.
-func (h *HandlerFerramentas) ListarFerramentas(ctx context.Context) ([]mcp.Ferramenta, error) {
-	skills, err := h.clienteBackend.ListarSkillsAtivas(ctx)
+// ListTools queries the tenant's active skills and converts them to MCP Tools.
+// Each skill is exposed with name=slug, description and original inputSchema.
+func (h *ToolsHandlerImpl) ListTools(ctx context.Context) ([]mcp.Tool, error) {
+	skills, err := h.backendClient.ListActiveSkills(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao buscar skills do backend: %w", err)
 	}
 
-	ferramentas := make([]mcp.Ferramenta, 0, len(skills))
+	tools := make([]mcp.Tool, 0, len(skills))
 	for _, skill := range skills {
-		ferramenta := converterSkillParaFerramenta(skill)
-		ferramentas = append(ferramentas, ferramenta)
+		tool := skillToTool(skill)
+		tools = append(tools, tool)
 	}
 
-	return ferramentas, nil
+	return tools, nil
 }
 
-// ChamarFerramenta invoca uma skill pelo slug com os argumentos fornecidos.
-// Delega a execução ao agenthub-skill-runtime e retorna o resultado como conteúdo MCP.
-func (h *HandlerFerramentas) ChamarFerramenta(
+// CallTool invokes a skill by slug with the provided arguments.
+// Delegates execution to the agenthub-skill-runtime and returns the result as MCP content.
+func (h *ToolsHandlerImpl) CallTool(
 	ctx context.Context,
-	nome string,
-	argumentos map[string]interface{},
-) (*mcp.ResultadoChamarFerramenta, error) {
-	if nome == "" {
+	name string,
+	arguments map[string]interface{},
+) (*mcp.CallToolResult, error) {
+	if name == "" {
 		return nil, fmt.Errorf("nome da ferramenta é obrigatório")
 	}
 
-	req := skillruntime.RequisicaoInvocarSkill{
+	req := skillruntime.InvokeSkillRequest{
 		TenantID:  h.tenantID,
-		SkillSlug: nome,
-		Input:     argumentos,
+		SkillSlug: name,
+		Input:     arguments,
 	}
 
-	resultado, err := h.clienteSkillRuntime.InvocarSkill(ctx, req)
+	result, err := h.skillRuntimeClient.InvokeSkill(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao invocar skill '%s': %w", nome, err)
+		return nil, fmt.Errorf("erro ao invocar skill '%s': %w", name, err)
 	}
 
-	// Serializar o resultado como JSON para o conteúdo de texto
-	resultadoJSON, err := json.Marshal(resultado.Resultado)
+	// Serialize the result as JSON for the text content
+	resultJSON, err := json.Marshal(result.Result)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao serializar resultado da skill: %w", err)
 	}
 
-	return &mcp.ResultadoChamarFerramenta{
-		EhErro: !resultado.Sucesso,
-		Conteudo: []mcp.ItemConteudo{
-			{Tipo: "text", Texto: string(resultadoJSON)},
+	return &mcp.CallToolResult{
+		IsError: !result.Success,
+		Content: []mcp.ContentItem{
+			{Type: "text", Text: string(resultJSON)},
 		},
 	}, nil
 }
 
-// converterSkillParaFerramenta converte um SkillDTO do backend para uma Ferramenta MCP.
-// O slug da skill se torna o nome da ferramenta para identificação única.
-func converterSkillParaFerramenta(skill backend.SkillDTO) mcp.Ferramenta {
-	// Schema padrão caso a skill não tenha um definido
+// skillToTool converts a SkillDTO from the backend to an MCP Tool.
+// The skill slug becomes the tool name for unique identification.
+func skillToTool(skill backend.SkillDTO) mcp.Tool {
+	// Default schema when the skill has none defined
 	inputSchema := skill.InputSchema
 	if inputSchema == nil {
 		inputSchema = map[string]interface{}{
@@ -109,9 +109,9 @@ func converterSkillParaFerramenta(skill backend.SkillDTO) mcp.Ferramenta {
 		}
 	}
 
-	return mcp.Ferramenta{
-		Nome:        skill.Slug,
-		Descricao:   skill.Descricao,
+	return mcp.Tool{
+		Name:        skill.Slug,
+		Description: skill.Description,
 		InputSchema: inputSchema,
 	}
 }

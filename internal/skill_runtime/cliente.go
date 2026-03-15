@@ -12,35 +12,35 @@ import (
 	"time"
 )
 
-// RequisicaoInvocarSkill representa o payload para invocar uma skill.
-type RequisicaoInvocarSkill struct {
+// InvokeSkillRequest represents the payload to invoke a skill.
+type InvokeSkillRequest struct {
 	TenantID  string                 `json:"tenantId"`
 	SkillSlug string                 `json:"skillSlug"`
 	Input     map[string]interface{} `json:"input"`
 	Timeout   int                    `json:"timeout,omitempty"`
 }
 
-// ResultadoSkill representa a resposta da invocação de uma skill.
-type ResultadoSkill struct {
+// SkillResult represents the response from a skill invocation.
+type SkillResult struct {
 	ExecutionID string                 `json:"executionId"`
 	SkillSlug   string                 `json:"skillSlug"`
-	Sucesso     bool                   `json:"success"`
-	Resultado   map[string]interface{} `json:"result"`
-	Erro        string                 `json:"error"`
-	LatenciaMs  int64                  `json:"latencyMs"`
+	Success     bool                   `json:"success"`
+	Result      map[string]interface{} `json:"result"`
+	Error       string                 `json:"error"`
+	LatencyMs   int64                  `json:"latencyMs"`
 }
 
-// ClienteSkillRuntime realiza invocações de skills no agenthub-skill-runtime.
-type ClienteSkillRuntime struct {
-	urlBase  string
+// SkillRuntimeClient performs skill invocations on the agenthub-skill-runtime.
+type SkillRuntimeClient struct {
+	baseURL  string
 	tenantID string
 	http     *http.Client
 }
 
-// NovoClienteSkillRuntime cria um novo cliente HTTP para o agenthub-skill-runtime.
-func NovoClienteSkillRuntime(urlBase, tenantID string) *ClienteSkillRuntime {
-	return &ClienteSkillRuntime{
-		urlBase:  urlBase,
+// NewSkillRuntimeClient creates a new HTTP client for the agenthub-skill-runtime.
+func NewSkillRuntimeClient(baseURL, tenantID string) *SkillRuntimeClient {
+	return &SkillRuntimeClient{
+		baseURL:  baseURL,
 		tenantID: tenantID,
 		http: &http.Client{
 			Timeout: 60 * time.Second,
@@ -48,27 +48,27 @@ func NovoClienteSkillRuntime(urlBase, tenantID string) *ClienteSkillRuntime {
 	}
 }
 
-// InvocarSkill invoca uma skill pelo slug com os argumentos fornecidos.
-// Chama POST /api/v1/skills/invoke no skill-runtime.
-func (c *ClienteSkillRuntime) InvocarSkill(ctx context.Context, req RequisicaoInvocarSkill) (*ResultadoSkill, error) {
-	url := fmt.Sprintf("%s/api/v1/skills/invoke", c.urlBase)
+// InvokeSkill invokes a skill by slug with the provided arguments.
+// Calls POST /api/v1/skills/invoke on the skill-runtime.
+func (c *SkillRuntimeClient) InvokeSkill(ctx context.Context, req InvokeSkillRequest) (*SkillResult, error) {
+	url := fmt.Sprintf("%s/api/v1/skills/invoke", c.baseURL)
 
-	// Garantir que o tenantId esteja preenchido
+	// Ensure tenantId is filled
 	if req.TenantID == "" {
 		req.TenantID = c.tenantID
 	}
 
-	// Timeout padrão de 30s se não especificado
+	// Default timeout of 30s if not specified
 	if req.Timeout == 0 {
 		req.Timeout = 30000
 	}
 
-	corpo, err := json.Marshal(req)
+	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao serializar requisição: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(corpo))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criar requisição HTTP: %w", err)
 	}
@@ -82,19 +82,19 @@ func (c *ClienteSkillRuntime) InvocarSkill(ctx context.Context, req RequisicaoIn
 	}
 	defer resp.Body.Close()
 
-	corpoResp, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao ler resposta: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("skill-runtime retornou status %d: %s", resp.StatusCode, string(corpoResp))
+		return nil, fmt.Errorf("skill-runtime retornou status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var resultado ResultadoSkill
-	if err := json.Unmarshal(corpoResp, &resultado); err != nil {
+	var result SkillResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("erro ao decodificar resultado da skill: %w", err)
 	}
 
-	return &resultado, nil
+	return &result, nil
 }

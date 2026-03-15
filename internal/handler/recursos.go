@@ -12,92 +12,92 @@ import (
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
 )
 
-// prefixoURIKnowledgeBase é o prefixo URI utilizado para identificar knowledge bases.
-const prefixoURIKnowledgeBase = "agenthub://kb/"
+// kbURIPrefix is the URI prefix used to identify knowledge bases.
+const kbURIPrefix = "agenthub://kb/"
 
-// InterfaceClienteBackendRecursos define as operações de backend usadas pelo handler de recursos.
-type InterfaceClienteBackendRecursos interface {
-	ListarKnowledgeBases(ctx context.Context) ([]backend.KnowledgeBaseDTO, error)
-	LerKnowledgeBase(ctx context.Context, kbID string) (*backend.KnowledgeBaseDTO, error)
+// BackendClientResourcesIface defines the backend operations used by the resources handler.
+type BackendClientResourcesIface interface {
+	ListKnowledgeBases(ctx context.Context) ([]backend.KnowledgeBaseDTO, error)
+	GetKnowledgeBase(ctx context.Context, kbID string) (*backend.KnowledgeBaseDTO, error)
 }
 
-// HandlerRecursos implementa a interface GerenciadorRecursos do MCPServidor.
-// Expõe as Knowledge Bases do AgentHub como recursos MCP acessíveis via URI.
-type HandlerRecursos struct {
-	clienteBackend InterfaceClienteBackendRecursos
+// ResourcesHandlerImpl implements the ResourcesHandler interface of the MCPServer.
+// Exposes AgentHub Knowledge Bases as MCP resources accessible via URI.
+type ResourcesHandlerImpl struct {
+	backendClient BackendClientResourcesIface
 }
 
-// NovoHandlerRecursos cria um novo handler de recursos MCP.
-func NovoHandlerRecursos(clienteBackend InterfaceClienteBackendRecursos) *HandlerRecursos {
-	return &HandlerRecursos{clienteBackend: clienteBackend}
+// NewResourcesHandler creates a new MCP resources handler.
+func NewResourcesHandler(backendClient BackendClientResourcesIface) *ResourcesHandlerImpl {
+	return &ResourcesHandlerImpl{backendClient: backendClient}
 }
 
-// ListarRecursos consulta as knowledge bases do tenant e as converte para MCP Resources.
-// Cada knowledge base recebe um URI no formato agenthub://kb/{id}.
-func (h *HandlerRecursos) ListarRecursos(ctx context.Context) ([]mcp.Recurso, error) {
-	kbs, err := h.clienteBackend.ListarKnowledgeBases(ctx)
+// ListResources queries the tenant's knowledge bases and converts them to MCP Resources.
+// Each knowledge base receives a URI in the format agenthub://kb/{id}.
+func (h *ResourcesHandlerImpl) ListResources(ctx context.Context) ([]mcp.Resource, error) {
+	kbs, err := h.backendClient.ListKnowledgeBases(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao buscar knowledge bases do backend: %w", err)
 	}
 
-	recursos := make([]mcp.Recurso, 0, len(kbs))
+	resources := make([]mcp.Resource, 0, len(kbs))
 	for _, kb := range kbs {
-		recurso := converterKBParaRecurso(kb)
-		recursos = append(recursos, recurso)
+		resource := kbToResource(kb)
+		resources = append(resources, resource)
 	}
 
-	return recursos, nil
+	return resources, nil
 }
 
-// LerRecurso retorna os metadados de uma Knowledge Base pelo URI.
-// O URI deve estar no formato agenthub://kb/{uuid}.
-func (h *HandlerRecursos) LerRecurso(ctx context.Context, uri string) (*mcp.ConteudoRecurso, error) {
-	kbID, err := extrairIDdoURI(uri)
+// ReadResource returns the metadata of a Knowledge Base by URI.
+// The URI must be in the format agenthub://kb/{uuid}.
+func (h *ResourcesHandlerImpl) ReadResource(ctx context.Context, uri string) (*mcp.ResourceContent, error) {
+	kbID, err := extractIDFromURI(uri)
 	if err != nil {
 		return nil, err
 	}
 
-	kb, err := h.clienteBackend.LerKnowledgeBase(ctx, kbID)
+	kb, err := h.backendClient.GetKnowledgeBase(ctx, kbID)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao ler knowledge base '%s': %w", kbID, err)
 	}
 
-	// Serializar metadados da KB como JSON
-	metadados, err := json.Marshal(map[string]interface{}{
-		"id":        kb.ID,
-		"nome":      kb.Nome,
-		"descricao": kb.Descricao,
-		"status":    kb.Status,
+	// Serialize KB metadata as JSON
+	metadata, err := json.Marshal(map[string]interface{}{
+		"id":          kb.ID,
+		"name":        kb.Name,
+		"description": kb.Description,
+		"status":      kb.Status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("erro ao serializar metadados da knowledge base: %w", err)
 	}
 
-	return &mcp.ConteudoRecurso{
+	return &mcp.ResourceContent{
 		URI:      uri,
-		TipoMIME: "application/json",
-		Texto:    string(metadados),
+		MIMEType: "application/json",
+		Text:     string(metadata),
 	}, nil
 }
 
-// converterKBParaRecurso converte um KnowledgeBaseDTO para um Recurso MCP.
-func converterKBParaRecurso(kb backend.KnowledgeBaseDTO) mcp.Recurso {
-	return mcp.Recurso{
-		URI:       prefixoURIKnowledgeBase + kb.ID,
-		Nome:      kb.Nome,
-		Descricao: kb.Descricao,
-		TipoMIME:  "application/json",
+// kbToResource converts a KnowledgeBaseDTO to an MCP Resource.
+func kbToResource(kb backend.KnowledgeBaseDTO) mcp.Resource {
+	return mcp.Resource{
+		URI:         kbURIPrefix + kb.ID,
+		Name:        kb.Name,
+		Description: kb.Description,
+		MIMEType:    "application/json",
 	}
 }
 
-// extrairIDdoURI extrai o UUID da knowledge base de um URI no formato agenthub://kb/{id}.
-func extrairIDdoURI(uri string) (string, error) {
-	if !strings.HasPrefix(uri, prefixoURIKnowledgeBase) {
+// extractIDFromURI extracts the knowledge base UUID from a URI in the format agenthub://kb/{id}.
+func extractIDFromURI(uri string) (string, error) {
+	if !strings.HasPrefix(uri, kbURIPrefix) {
 		return "", fmt.Errorf("URI inválido: esperado formato '%s{id}', recebido '%s'",
-			prefixoURIKnowledgeBase, uri)
+			kbURIPrefix, uri)
 	}
 
-	kbID := strings.TrimPrefix(uri, prefixoURIKnowledgeBase)
+	kbID := strings.TrimPrefix(uri, kbURIPrefix)
 	if kbID == "" {
 		return "", fmt.Errorf("URI inválido: ID da knowledge base não pode ser vazio")
 	}

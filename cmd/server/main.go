@@ -18,139 +18,139 @@ import (
 	skillruntime "github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/skill_runtime"
 )
 
-// Configuracao armazena as configurações carregadas de variáveis de ambiente.
-type Configuracao struct {
-	// BackendURL é a URL base do agenthub-backend (ex: http://agenthub-backend:8080)
+// Config stores settings loaded from environment variables.
+type Config struct {
+	// BackendURL is the base URL of the agenthub-backend (e.g. http://agenthub-backend:8080)
 	BackendURL string
-	// SkillRuntimeURL é a URL base do agenthub-skill-runtime (ex: http://agenthub-skill-runtime:8082)
+	// SkillRuntimeURL is the base URL of the agenthub-skill-runtime (e.g. http://agenthub-skill-runtime:8082)
 	SkillRuntimeURL string
-	// TenantID é o UUID do tenant para o qual este servidor está configurado
+	// TenantID is the UUID of the tenant for which this server is configured
 	TenantID string
-	// APIToken é o Bearer token para autenticação no backend
+	// APIToken is the Bearer token for backend authentication
 	APIToken string
-	// ModoStdio define se o servidor deve iniciar em modo stdio (padrão: true)
-	ModoStdio bool
-	// PortaHTTP é a porta do servidor HTTP (0 = desabilitado)
-	PortaHTTP int
+	// StdioMode defines whether the server should start in stdio mode (default: true)
+	StdioMode bool
+	// HTTPPort is the HTTP server port (0 = disabled)
+	HTTPPort int
 }
 
-// carregarConfiguracao carrega as configurações de variáveis de ambiente.
-func carregarConfiguracao() *Configuracao {
-	portaHTTP := 0
-	if porta := obterEnv("HTTP_PORT", ""); porta != "" {
-		if p, err := strconv.Atoi(porta); err == nil {
-			portaHTTP = p
+// loadConfig loads settings from environment variables.
+func loadConfig() *Config {
+	httpPort := 0
+	if port := getEnv("HTTP_PORT", ""); port != "" {
+		if p, err := strconv.Atoi(port); err == nil {
+			httpPort = p
 		}
 	}
 
-	modoStdio := true
-	if modo := obterEnv("STDIO_MODE", "true"); modo == "false" {
-		modoStdio = false
+	stdioMode := true
+	if mode := getEnv("STDIO_MODE", "true"); mode == "false" {
+		stdioMode = false
 	}
 
-	return &Configuracao{
-		BackendURL:      obterEnv("AGENTHUB_BACKEND_URL", "http://agenthub-backend:8080"),
-		SkillRuntimeURL: obterEnv("AGENTHUB_SKILL_RUNTIME_URL", "http://agenthub-skill-runtime:8082"),
-		TenantID:        obterEnv("AGENTHUB_TENANT_ID", ""),
-		APIToken:        obterEnv("AGENTHUB_API_TOKEN", ""),
-		ModoStdio:       modoStdio,
-		PortaHTTP:       portaHTTP,
+	return &Config{
+		BackendURL:      getEnv("AGENTHUB_BACKEND_URL", "http://agenthub-backend:8080"),
+		SkillRuntimeURL: getEnv("AGENTHUB_SKILL_RUNTIME_URL", "http://agenthub-skill-runtime:8082"),
+		TenantID:        getEnv("AGENTHUB_TENANT_ID", ""),
+		APIToken:        getEnv("AGENTHUB_API_TOKEN", ""),
+		StdioMode:       stdioMode,
+		HTTPPort:        httpPort,
 	}
 }
 
-// obterEnv retorna o valor de uma variável de ambiente ou o valor padrão.
-func obterEnv(chave, valorPadrao string) string {
-	if valor := os.Getenv(chave); valor != "" {
-		return valor
+// getEnv returns the value of an environment variable or the default value.
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return valorPadrao
+	return defaultValue
 }
 
 func main() {
 	log.Println("Iniciando AgentHub MCP Server Runtime...")
 
-	// Carregar configurações
-	config := carregarConfiguracao()
+	// Load configuration
+	config := loadConfig()
 
 	if config.TenantID == "" {
 		log.Fatal("AGENTHUB_TENANT_ID é obrigatório — defina a variável de ambiente antes de iniciar")
 	}
 
-	log.Printf("Configuração: backendURL=%s, skillRuntimeURL=%s, tenantID=%s, modoStdio=%v, portaHTTP=%d",
-		config.BackendURL, config.SkillRuntimeURL, config.TenantID, config.ModoStdio, config.PortaHTTP)
+	log.Printf("Configuração: backendURL=%s, skillRuntimeURL=%s, tenantID=%s, stdioMode=%v, httpPort=%d",
+		config.BackendURL, config.SkillRuntimeURL, config.TenantID, config.StdioMode, config.HTTPPort)
 
-	// Criar clientes HTTP
-	clienteBackend := backend.NovoClienteBackend(config.BackendURL, config.TenantID, config.APIToken)
-	clienteSkillRuntime := skillruntime.NovoClienteSkillRuntime(config.SkillRuntimeURL, config.TenantID)
+	// Create HTTP clients
+	backendClient := backend.NewBackendClient(config.BackendURL, config.TenantID, config.APIToken)
+	skillRuntimeClient := skillruntime.NewSkillRuntimeClient(config.SkillRuntimeURL, config.TenantID)
 
-	// Criar handlers MCP
-	handlerFerramentas := handler.NovoHandlerFerramentas(clienteBackend, clienteSkillRuntime, config.TenantID)
-	handlerRecursos := handler.NovoHandlerRecursos(clienteBackend)
-	handlerPrompts := handler.NovoHandlerPrompts()
+	// Create MCP handlers
+	toolsHandler := handler.NewToolsHandler(backendClient, skillRuntimeClient, config.TenantID)
+	resourcesHandler := handler.NewResourcesHandler(backendClient)
+	promptsHandler := handler.NewPromptsHandler()
 
-	// Criar servidor MCP
-	servidor := mcp.NovoMCPServidor(handlerFerramentas, handlerRecursos, handlerPrompts)
+	// Create MCP server
+	server := mcp.NewMCPServer(toolsHandler, resourcesHandler, promptsHandler)
 
-	// Contexto com cancelamento para shutdown graceful
-	ctx, cancelar := context.WithCancel(context.Background())
-	defer cancelar()
+	// Context with cancellation for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Canal para erros dos servidores
-	canalErros := make(chan error, 2)
+	// Channel for server errors
+	errChan := make(chan error, 2)
 
-	// Iniciar servidor HTTP se configurado
-	if config.PortaHTTP > 0 {
-		servidorHTTP := api.NovoServidorHTTP(config.PortaHTTP, servidor)
+	// Start HTTP server if configured
+	if config.HTTPPort > 0 {
+		httpServer := api.NewHTTPServer(config.HTTPPort, server)
 		go func() {
-			log.Printf("Iniciando servidor HTTP na porta %d...", config.PortaHTTP)
-			if err := servidorHTTP.Iniciar(); err != nil {
-				canalErros <- err
+			log.Printf("Iniciando servidor HTTP na porta %d...", config.HTTPPort)
+			if err := httpServer.Start(); err != nil {
+				errChan <- err
 			}
 		}()
 
-		// Goroutine para shutdown graceful do HTTP
+		// Goroutine for graceful HTTP shutdown
 		go func() {
 			<-ctx.Done()
 			log.Println("Parando servidor HTTP...")
-			ctxParada, cancelarParada := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancelarParada()
-			if err := servidorHTTP.Parar(ctxParada); err != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := httpServer.Stop(shutdownCtx); err != nil {
 				log.Printf("Erro ao parar servidor HTTP: %v", err)
 			}
 		}()
 	}
 
-	// Iniciar servidor MCP em modo stdio (padrão)
-	if config.ModoStdio {
+	// Start MCP server in stdio mode (default)
+	if config.StdioMode {
 		go func() {
 			log.Println("Iniciando servidor MCP em modo stdio...")
-			if err := servidor.Iniciar(ctx, os.Stdin, os.Stdout); err != nil {
-				canalErros <- err
+			if err := server.Start(ctx, os.Stdin, os.Stdout); err != nil {
+				errChan <- err
 			}
 		}()
 	}
 
 	log.Println("AgentHub MCP Server Runtime iniciado com sucesso")
-	if config.ModoStdio {
+	if config.StdioMode {
 		log.Println("Modo stdio: aguardando mensagens do cliente MCP via stdin")
 	}
-	if config.PortaHTTP > 0 {
-		log.Printf("Servidor HTTP disponível em http://localhost:%d", config.PortaHTTP)
-		log.Printf("Health check: GET http://localhost:%d/health", config.PortaHTTP)
-		log.Printf("MCP via HTTP: POST http://localhost:%d/mcp", config.PortaHTTP)
+	if config.HTTPPort > 0 {
+		log.Printf("Servidor HTTP disponível em http://localhost:%d", config.HTTPPort)
+		log.Printf("Health check: GET http://localhost:%d/health", config.HTTPPort)
+		log.Printf("MCP via HTTP: POST http://localhost:%d/mcp", config.HTTPPort)
 	}
 
-	// Aguardar sinal de interrupção ou erro
-	canalSinal := make(chan os.Signal, 1)
-	signal.Notify(canalSinal, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	// Wait for interrupt signal or error
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
 	select {
-	case sig := <-canalSinal:
+	case sig := <-sigChan:
 		log.Printf("Sinal recebido: %v. Iniciando shutdown graceful...", sig)
-	case err := <-canalErros:
+	case err := <-errChan:
 		log.Printf("Erro fatal em servidor: %v. Encerrando...", err)
 	}
 
-	cancelar()
+	cancel()
 	log.Println("AgentHub MCP Server Runtime encerrado com sucesso")
 }

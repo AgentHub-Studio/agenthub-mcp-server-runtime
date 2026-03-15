@@ -12,19 +12,19 @@ import (
 	"time"
 )
 
-// ClienteBackend realiza chamadas HTTP ao agenthub-backend para consultar
-// skills e knowledge bases do tenant.
-type ClienteBackend struct {
-	urlBase  string
+// BackendClient performs HTTP calls to the agenthub-backend to query
+// skills and knowledge bases for the tenant.
+type BackendClient struct {
+	baseURL  string
 	tenantID string
 	token    string
 	http     *http.Client
 }
 
-// NovoClienteBackend cria um novo cliente HTTP para o agenthub-backend.
-func NovoClienteBackend(urlBase, tenantID, token string) *ClienteBackend {
-	return &ClienteBackend{
-		urlBase:  urlBase,
+// NewBackendClient creates a new HTTP client for the agenthub-backend.
+func NewBackendClient(baseURL, tenantID, token string) *BackendClient {
+	return &BackendClient{
+		baseURL:  baseURL,
 		tenantID: tenantID,
 		token:    token,
 		http: &http.Client{
@@ -33,17 +33,17 @@ func NovoClienteBackend(urlBase, tenantID, token string) *ClienteBackend {
 	}
 }
 
-// ListarSkillsAtivas retorna todas as skills ativas do tenant.
-// Chama GET /api/skills?status=ACTIVE no backend.
-func (c *ClienteBackend) ListarSkillsAtivas(ctx context.Context) ([]SkillDTO, error) {
-	url := fmt.Sprintf("%s/api/skills?status=ACTIVE", c.urlBase)
+// ListActiveSkills returns all active skills for the tenant.
+// Calls GET /api/skills?status=ACTIVE on the backend.
+func (c *BackendClient) ListActiveSkills(ctx context.Context) ([]SkillDTO, error) {
+	url := fmt.Sprintf("%s/api/skills?status=ACTIVE", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criar requisição: %w", err)
 	}
 
-	c.adicionarHeaders(req)
+	c.addHeaders(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -52,32 +52,32 @@ func (c *ClienteBackend) ListarSkillsAtivas(ctx context.Context) ([]SkillDTO, er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		corpo, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("backend retornou status %d: %s", resp.StatusCode, string(corpo))
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend retornou status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// O backend retorna um wrapper com lista de conteúdo
-	var resultado struct {
-		Conteudo []SkillDTO `json:"content"`
+	// The backend returns a wrapper with a content list
+	var result struct {
+		Content []SkillDTO `json:"content"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&resultado); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("erro ao decodificar skills: %w", err)
 	}
 
-	return resultado.Conteudo, nil
+	return result.Content, nil
 }
 
-// ListarKnowledgeBases retorna todas as knowledge bases do tenant.
-// Chama GET /api/knowledge-bases no backend.
-func (c *ClienteBackend) ListarKnowledgeBases(ctx context.Context) ([]KnowledgeBaseDTO, error) {
-	url := fmt.Sprintf("%s/api/knowledge-bases", c.urlBase)
+// ListKnowledgeBases returns all knowledge bases for the tenant.
+// Calls GET /api/knowledge-bases on the backend.
+func (c *BackendClient) ListKnowledgeBases(ctx context.Context) ([]KnowledgeBaseDTO, error) {
+	url := fmt.Sprintf("%s/api/knowledge-bases", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criar requisição: %w", err)
 	}
 
-	c.adicionarHeaders(req)
+	c.addHeaders(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -86,31 +86,31 @@ func (c *ClienteBackend) ListarKnowledgeBases(ctx context.Context) ([]KnowledgeB
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		corpo, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("backend retornou status %d: %s", resp.StatusCode, string(corpo))
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend retornou status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var resultado struct {
-		Conteudo []KnowledgeBaseDTO `json:"content"`
+	var result struct {
+		Content []KnowledgeBaseDTO `json:"content"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&resultado); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("erro ao decodificar knowledge bases: %w", err)
 	}
 
-	return resultado.Conteudo, nil
+	return result.Content, nil
 }
 
-// LerKnowledgeBase retorna os detalhes de uma knowledge base pelo ID.
-// Chama GET /api/knowledge-bases/{id} no backend.
-func (c *ClienteBackend) LerKnowledgeBase(ctx context.Context, kbID string) (*KnowledgeBaseDTO, error) {
-	url := fmt.Sprintf("%s/api/knowledge-bases/%s", c.urlBase, kbID)
+// GetKnowledgeBase returns the details of a knowledge base by ID.
+// Calls GET /api/knowledge-bases/{id} on the backend.
+func (c *BackendClient) GetKnowledgeBase(ctx context.Context, kbID string) (*KnowledgeBaseDTO, error) {
+	url := fmt.Sprintf("%s/api/knowledge-bases/%s", c.baseURL, kbID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criar requisição: %w", err)
 	}
 
-	c.adicionarHeaders(req)
+	c.addHeaders(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -123,8 +123,8 @@ func (c *ClienteBackend) LerKnowledgeBase(ctx context.Context, kbID string) (*Kn
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		corpo, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("backend retornou status %d: %s", resp.StatusCode, string(corpo))
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend retornou status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var kb KnowledgeBaseDTO
@@ -135,8 +135,8 @@ func (c *ClienteBackend) LerKnowledgeBase(ctx context.Context, kbID string) (*Kn
 	return &kb, nil
 }
 
-// adicionarHeaders adiciona os headers de autenticação e tenant em um request.
-func (c *ClienteBackend) adicionarHeaders(req *http.Request) {
+// addHeaders adds authentication and tenant headers to a request.
+func (c *BackendClient) addHeaders(req *http.Request) {
 	req.Header.Set("X-Tenant-ID", c.tenantID)
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {

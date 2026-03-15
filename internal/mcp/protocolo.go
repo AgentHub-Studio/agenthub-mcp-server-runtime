@@ -11,33 +11,33 @@ import (
 	"sync"
 )
 
-// DespachanteMensagem é a função chamada para processar uma requisição e retornar uma resposta.
-// Retorna nil para notificações (sem resposta esperada).
-type DespachanteMensagem func(req *RequisicaoJSONRPC) *RespostaJSONRPC
+// MessageDispatcher is the function called to process a request and return a response.
+// Returns nil for notifications (no response expected).
+type MessageDispatcher func(req *JSONRPCRequest) *JSONRPCResponse
 
-// Protocolo gerencia a comunicação JSON-RPC 2.0 no papel de servidor.
-// Lê requisições do leitor e escreve respostas no escritor de forma thread-safe.
-type Protocolo struct {
-	leitor       *bufio.Reader
-	escritor     io.Writer
-	mutexEscrita sync.Mutex
-	despachante  DespachanteMensagem
+// Protocol manages JSON-RPC 2.0 communication in the server role.
+// Reads requests from the reader and writes responses to the writer in a thread-safe manner.
+type Protocol struct {
+	reader     *bufio.Reader
+	writer     io.Writer
+	writeMu    sync.Mutex
+	dispatcher MessageDispatcher
 }
 
-// NovoProtocolo cria um novo handler de protocolo servidor.
-func NovoProtocolo(leitor io.Reader, escritor io.Writer, despachante DespachanteMensagem) *Protocolo {
-	return &Protocolo{
-		leitor:      bufio.NewReader(leitor),
-		escritor:    escritor,
-		despachante: despachante,
+// NewProtocol creates a new server protocol handler.
+func NewProtocol(reader io.Reader, writer io.Writer, dispatcher MessageDispatcher) *Protocol {
+	return &Protocol{
+		reader:     bufio.NewReader(reader),
+		writer:     writer,
+		dispatcher: dispatcher,
 	}
 }
 
-// IniciarLoop inicia o loop de leitura de mensagens do cliente.
-// Bloqueia até que o leitor seja fechado ou ocorra erro.
-func (p *Protocolo) IniciarLoop() error {
+// StartLoop starts the message reading loop from the client.
+// Blocks until the reader is closed or an error occurs.
+func (p *Protocol) StartLoop() error {
 	for {
-		linha, err := p.leitor.ReadBytes('\n')
+		line, err := p.reader.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
 				return nil
@@ -45,49 +45,49 @@ func (p *Protocolo) IniciarLoop() error {
 			return fmt.Errorf("erro ao ler mensagem: %w", err)
 		}
 
-		if len(linha) == 0 {
+		if len(line) == 0 {
 			continue
 		}
 
-		// Parsear como requisição JSON-RPC
-		var req RequisicaoJSONRPC
-		if err := json.Unmarshal(linha, &req); err != nil {
-			// Retornar erro de parse
-			errResp := NovoErroJSONRPC(nil, ErroParseamento, "falha ao parsear JSON")
-			if writeErr := p.escreverMensagem(errResp); writeErr != nil {
+		// Parse as JSON-RPC request
+		var req JSONRPCRequest
+		if err := json.Unmarshal(line, &req); err != nil {
+			// Return parse error
+			errResp := NewJSONRPCError(nil, ErrCodeParse, "falha ao parsear JSON")
+			if writeErr := p.writeMessage(errResp); writeErr != nil {
 				return fmt.Errorf("erro ao escrever resposta de parse: %w", writeErr)
 			}
 			continue
 		}
 
-		// Processar a requisição via despachante
-		resposta := p.despachante(&req)
+		// Process request via dispatcher
+		response := p.dispatcher(&req)
 
-		// Notificações não geram resposta (ID nulo)
-		if resposta == nil {
+		// Notifications do not generate responses (null ID)
+		if response == nil {
 			continue
 		}
 
-		if err := p.escreverMensagem(resposta); err != nil {
+		if err := p.writeMessage(response); err != nil {
 			return fmt.Errorf("erro ao escrever resposta: %w", err)
 		}
 	}
 }
 
-// escreverMensagem serializa e escreve uma mensagem JSON-RPC no escritor de forma thread-safe.
-func (p *Protocolo) escreverMensagem(mensagem interface{}) error {
-	p.mutexEscrita.Lock()
-	defer p.mutexEscrita.Unlock()
+// writeMessage serializes and writes a JSON-RPC message to the writer in a thread-safe manner.
+func (p *Protocol) writeMessage(message interface{}) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 
-	dados, err := json.Marshal(mensagem)
+	data, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("erro ao serializar mensagem: %w", err)
 	}
 
-	// Cada mensagem é seguida de newline
-	dados = append(dados, '\n')
+	// Each message is followed by a newline
+	data = append(data, '\n')
 
-	if _, err := p.escritor.Write(dados); err != nil {
+	if _, err := p.writer.Write(data); err != nil {
 		return fmt.Errorf("erro ao escrever no stream: %w", err)
 	}
 

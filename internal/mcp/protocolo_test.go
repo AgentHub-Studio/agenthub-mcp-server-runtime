@@ -9,144 +9,144 @@ import (
 
 // ========== Fakes para teste ==========
 
-// despachanteFake registra as requisições recebidas para verificação nos testes.
-type despachanteFake struct {
-	requisicoes []*RequisicaoJSONRPC
-	resposta    *RespostaJSONRPC
+// fakeDispatcher records received requests for verification in tests.
+type fakeDispatcher struct {
+	requests []*JSONRPCRequest
+	response *JSONRPCResponse
 }
 
-func (d *despachanteFake) processar(req *RequisicaoJSONRPC) *RespostaJSONRPC {
-	d.requisicoes = append(d.requisicoes, req)
-	return d.resposta
+func (d *fakeDispatcher) dispatch(req *JSONRPCRequest) *JSONRPCResponse {
+	d.requests = append(d.requests, req)
+	return d.response
 }
 
 // ========== Testes do loop de protocolo ==========
 
-func TestProtocolo_DeveLerEProcessarInicializacao(t *testing.T) {
-	// Preparar requisição de inicialização
-	req := RequisicaoJSONRPC{
+func TestProtocol_DeveLerEProcessarInicializacao(t *testing.T) {
+	// Prepare initialization request
+	req := JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      float64(1),
-		Metodo:  "initialize",
+		Method:  "initialize",
 		Params:  json.RawMessage(`{"protocolVersion":"2024-11-05"}`),
 	}
 	reqJSON, _ := json.Marshal(req)
 
-	entrada := bytes.NewReader(append(reqJSON, '\n'))
-	saida := &bytes.Buffer{}
+	input := bytes.NewReader(append(reqJSON, '\n'))
+	output := &bytes.Buffer{}
 
-	respostaEsperada := &RespostaJSONRPC{
-		JSONRPC:   "2.0",
-		ID:        float64(1),
-		Resultado: json.RawMessage(`{"ok":true}`),
+	expectedResponse := &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      float64(1),
+		Result:  json.RawMessage(`{"ok":true}`),
 	}
 
-	fake := &despachanteFake{resposta: respostaEsperada}
-	protocolo := NovoProtocolo(entrada, saida, fake.processar)
+	fake := &fakeDispatcher{response: expectedResponse}
+	protocol := NewProtocol(input, output, fake.dispatch)
 
-	err := protocolo.IniciarLoop()
+	err := protocol.StartLoop()
 
 	if err != nil {
-		t.Fatalf("IniciarLoop retornou erro inesperado: %v", err)
+		t.Fatalf("StartLoop retornou erro inesperado: %v", err)
 	}
 
-	if len(fake.requisicoes) != 1 {
-		t.Fatalf("esperava 1 requisição processada, obteve %d", len(fake.requisicoes))
+	if len(fake.requests) != 1 {
+		t.Fatalf("esperava 1 requisição processada, obteve %d", len(fake.requests))
 	}
 
-	if fake.requisicoes[0].Metodo != "initialize" {
-		t.Errorf("esperava método 'initialize', obteve '%s'", fake.requisicoes[0].Metodo)
+	if fake.requests[0].Method != "initialize" {
+		t.Errorf("esperava método 'initialize', obteve '%s'", fake.requests[0].Method)
 	}
 
-	// Verificar que a resposta foi escrita no stdout
-	saída := saida.String()
-	if !strings.Contains(saída, `"jsonrpc":"2.0"`) {
-		t.Errorf("resposta não contém versão JSON-RPC: %s", saída)
+	// Verify that the response was written to stdout
+	outputStr := output.String()
+	if !strings.Contains(outputStr, `"jsonrpc":"2.0"`) {
+		t.Errorf("resposta não contém versão JSON-RPC: %s", outputStr)
 	}
 }
 
-func TestProtocolo_NaoDeveResponderNotificacao(t *testing.T) {
-	// Notificações não têm ID e o despachante retorna nil
-	req := RequisicaoJSONRPC{
+func TestProtocol_NaoDeveResponderNotificacao(t *testing.T) {
+	// Notifications have no ID and the dispatcher returns nil
+	req := JSONRPCRequest{
 		JSONRPC: "2.0",
-		Metodo:  "notifications/initialized",
+		Method:  "notifications/initialized",
 	}
 	reqJSON, _ := json.Marshal(req)
 
-	entrada := bytes.NewReader(append(reqJSON, '\n'))
-	saida := &bytes.Buffer{}
+	input := bytes.NewReader(append(reqJSON, '\n'))
+	output := &bytes.Buffer{}
 
-	// O despachante retorna nil para notificações
-	fake := &despachanteFake{resposta: nil}
-	protocolo := NovoProtocolo(entrada, saida, fake.processar)
+	// The dispatcher returns nil for notifications
+	fake := &fakeDispatcher{response: nil}
+	protocol := NewProtocol(input, output, fake.dispatch)
 
-	err := protocolo.IniciarLoop()
+	err := protocol.StartLoop()
 
 	if err != nil {
-		t.Fatalf("IniciarLoop retornou erro inesperado: %v", err)
+		t.Fatalf("StartLoop retornou erro inesperado: %v", err)
 	}
 
-	// Nenhuma resposta deve ser escrita
-	if saida.Len() != 0 {
-		t.Errorf("não deveria ter escrito resposta para notificação, obteve: %s", saida.String())
+	// No response should be written
+	if output.Len() != 0 {
+		t.Errorf("não deveria ter escrito resposta para notificação, obteve: %s", output.String())
 	}
 
-	if len(fake.requisicoes) != 1 {
-		t.Fatalf("esperava 1 requisição processada, obteve %d", len(fake.requisicoes))
+	if len(fake.requests) != 1 {
+		t.Fatalf("esperava 1 requisição processada, obteve %d", len(fake.requests))
 	}
 }
 
-func TestProtocolo_DeveRetornarErroParaJSONInvalido(t *testing.T) {
-	// JSON malformado deve gerar erro de parse
-	entrada := bytes.NewReader([]byte("isto nao e json valido\n"))
-	saida := &bytes.Buffer{}
+func TestProtocol_DeveRetornarErroParaJSONInvalido(t *testing.T) {
+	// Malformed JSON should generate a parse error
+	input := bytes.NewReader([]byte("isto nao e json valido\n"))
+	output := &bytes.Buffer{}
 
-	fake := &despachanteFake{resposta: nil}
-	protocolo := NovoProtocolo(entrada, saida, fake.processar)
+	fake := &fakeDispatcher{response: nil}
+	protocol := NewProtocol(input, output, fake.dispatch)
 
-	err := protocolo.IniciarLoop()
+	err := protocol.StartLoop()
 
 	if err != nil {
-		t.Fatalf("IniciarLoop retornou erro inesperado: %v", err)
+		t.Fatalf("StartLoop retornou erro inesperado: %v", err)
 	}
 
-	// O despachante não deve ter sido chamado
-	if len(fake.requisicoes) != 0 {
+	// The dispatcher should not have been called
+	if len(fake.requests) != 0 {
 		t.Errorf("despachante não deveria ter sido chamado para JSON inválido")
 	}
 
-	// Deve ter escrito uma resposta de erro
-	saída := saida.String()
-	if !strings.Contains(saída, `"code"`) {
-		t.Errorf("esperava resposta de erro com 'code', obteve: %s", saída)
+	// Should have written an error response
+	outputStr := output.String()
+	if !strings.Contains(outputStr, `"code"`) {
+		t.Errorf("esperava resposta de erro com 'code', obteve: %s", outputStr)
 	}
 }
 
-func TestProtocolo_DeveProcessarMultiplasRequisicoes(t *testing.T) {
-	// Preparar três requisições consecutivas
-	req1, _ := json.Marshal(RequisicaoJSONRPC{JSONRPC: "2.0", ID: 1, Metodo: "tools/list"})
-	req2, _ := json.Marshal(RequisicaoJSONRPC{JSONRPC: "2.0", ID: 2, Metodo: "resources/list"})
-	req3, _ := json.Marshal(RequisicaoJSONRPC{JSONRPC: "2.0", ID: 3, Metodo: "prompts/list"})
+func TestProtocol_DeveProcessarMultiplasRequisicoes(t *testing.T) {
+	// Prepare three consecutive requests
+	req1, _ := json.Marshal(JSONRPCRequest{JSONRPC: "2.0", ID: 1, Method: "tools/list"})
+	req2, _ := json.Marshal(JSONRPCRequest{JSONRPC: "2.0", ID: 2, Method: "resources/list"})
+	req3, _ := json.Marshal(JSONRPCRequest{JSONRPC: "2.0", ID: 3, Method: "prompts/list"})
 
-	entradaStr := string(req1) + "\n" + string(req2) + "\n" + string(req3) + "\n"
-	entrada := strings.NewReader(entradaStr)
-	saida := &bytes.Buffer{}
+	inputStr := string(req1) + "\n" + string(req2) + "\n" + string(req3) + "\n"
+	input := strings.NewReader(inputStr)
+	output := &bytes.Buffer{}
 
-	respostaGenerica := &RespostaJSONRPC{
-		JSONRPC:   "2.0",
-		Resultado: json.RawMessage(`{}`),
+	genericResponse := &JSONRPCResponse{
+		JSONRPC: "2.0",
+		Result:  json.RawMessage(`{}`),
 	}
 
-	fake := &despachanteFake{resposta: respostaGenerica}
-	protocolo := NovoProtocolo(entrada, saida, fake.processar)
+	fake := &fakeDispatcher{response: genericResponse}
+	protocol := NewProtocol(input, output, fake.dispatch)
 
-	err := protocolo.IniciarLoop()
+	err := protocol.StartLoop()
 
 	if err != nil {
-		t.Fatalf("IniciarLoop retornou erro inesperado: %v", err)
+		t.Fatalf("StartLoop retornou erro inesperado: %v", err)
 	}
 
-	if len(fake.requisicoes) != 3 {
-		t.Errorf("esperava 3 requisições processadas, obteve %d", len(fake.requisicoes))
+	if len(fake.requests) != 3 {
+		t.Errorf("esperava 3 requisições processadas, obteve %d", len(fake.requests))
 	}
 }

@@ -11,134 +11,134 @@ import (
 
 // ========== Fakes para teste ==========
 
-// fakeClienteBackendRecursos simula o cliente backend para testes de recursos.
-type fakeClienteBackendRecursos struct {
-	kbs        []backend.KnowledgeBaseDTO
-	kb         *backend.KnowledgeBaseDTO
-	erroListar error
-	erroLer    error
+// fakeBackendClientResources simulates the backend client for resources tests.
+type fakeBackendClientResources struct {
+	kbs       []backend.KnowledgeBaseDTO
+	kb        *backend.KnowledgeBaseDTO
+	errList   error
+	errGet    error
 }
 
-func (f *fakeClienteBackendRecursos) ListarKnowledgeBases(ctx context.Context) ([]backend.KnowledgeBaseDTO, error) {
-	return f.kbs, f.erroListar
+func (f *fakeBackendClientResources) ListKnowledgeBases(ctx context.Context) ([]backend.KnowledgeBaseDTO, error) {
+	return f.kbs, f.errList
 }
 
-func (f *fakeClienteBackendRecursos) LerKnowledgeBase(ctx context.Context, kbID string) (*backend.KnowledgeBaseDTO, error) {
-	return f.kb, f.erroLer
+func (f *fakeBackendClientResources) GetKnowledgeBase(ctx context.Context, kbID string) (*backend.KnowledgeBaseDTO, error) {
+	return f.kb, f.errGet
 }
 
 // ========== Testes ==========
 
-func TestHandlerRecursos_DeveListarKBsComoRecursos(t *testing.T) {
+func TestResourcesHandler_DeveListarKBsComoRecursos(t *testing.T) {
 	kbs := []backend.KnowledgeBaseDTO{
 		{
-			ID:        "123e4567-e89b-12d3-a456-426614174000",
-			Nome:      "Documentação Técnica",
-			Descricao: "Base de documentação do AgentHub",
-			Status:    "ACTIVE",
+			ID:          "123e4567-e89b-12d3-a456-426614174000",
+			Name:        "Documentação Técnica",
+			Description: "Base de documentação do AgentHub",
+			Status:      "ACTIVE",
 		},
 		{
-			ID:        "987fcdeb-51a2-43f7-9012-abcdef012345",
-			Nome:      "FAQ Clientes",
-			Descricao: "Perguntas frequentes",
-			Status:    "ACTIVE",
+			ID:          "987fcdeb-51a2-43f7-9012-abcdef012345",
+			Name:        "FAQ Clientes",
+			Description: "Perguntas frequentes",
+			Status:      "ACTIVE",
 		},
 	}
 
-	handler := NovoHandlerRecursos(&fakeClienteBackendRecursos{kbs: kbs})
+	handler := NewResourcesHandler(&fakeBackendClientResources{kbs: kbs})
 
-	recursos, err := handler.ListarRecursos(context.Background())
+	resources, err := handler.ListResources(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarRecursos retornou erro inesperado: %v", err)
+		t.Fatalf("ListResources retornou erro inesperado: %v", err)
 	}
 
-	if len(recursos) != 2 {
-		t.Fatalf("esperava 2 recursos, obteve %d", len(recursos))
+	if len(resources) != 2 {
+		t.Fatalf("esperava 2 recursos, obteve %d", len(resources))
 	}
 
-	// Verificar formato do URI
-	uriEsperado := "agenthub://kb/123e4567-e89b-12d3-a456-426614174000"
-	if recursos[0].URI != uriEsperado {
-		t.Errorf("esperava URI '%s', obteve '%s'", uriEsperado, recursos[0].URI)
+	// Verify URI format
+	expectedURI := "agenthub://kb/123e4567-e89b-12d3-a456-426614174000"
+	if resources[0].URI != expectedURI {
+		t.Errorf("esperava URI '%s', obteve '%s'", expectedURI, resources[0].URI)
 	}
 
-	if recursos[0].Nome != "Documentação Técnica" {
-		t.Errorf("esperava nome 'Documentação Técnica', obteve '%s'", recursos[0].Nome)
+	if resources[0].Name != "Documentação Técnica" {
+		t.Errorf("esperava nome 'Documentação Técnica', obteve '%s'", resources[0].Name)
 	}
 
-	if recursos[0].TipoMIME != "application/json" {
-		t.Errorf("esperava TipoMIME 'application/json', obteve '%s'", recursos[0].TipoMIME)
+	if resources[0].MIMEType != "application/json" {
+		t.Errorf("esperava MIMEType 'application/json', obteve '%s'", resources[0].MIMEType)
 	}
 }
 
-func TestHandlerRecursos_DeveRetornarErroDoBackendAoListar(t *testing.T) {
-	erroBackend := errors.New("backend indisponível")
+func TestResourcesHandler_DeveRetornarErroDoBackendAoListar(t *testing.T) {
+	backendErr := errors.New("backend indisponível")
 
-	handler := NovoHandlerRecursos(&fakeClienteBackendRecursos{erroListar: erroBackend})
+	handler := NewResourcesHandler(&fakeBackendClientResources{errList: backendErr})
 
-	_, err := handler.ListarRecursos(context.Background())
+	_, err := handler.ListResources(context.Background())
 
 	if err == nil {
 		t.Fatal("esperava erro ao listar recursos com backend indisponível")
 	}
 }
 
-func TestHandlerRecursos_DeveLerRecursoPorURI(t *testing.T) {
+func TestResourcesHandler_DeveLerRecursoPorURI(t *testing.T) {
 	kb := &backend.KnowledgeBaseDTO{
-		ID:        "123e4567-e89b-12d3-a456-426614174000",
-		Nome:      "Documentação Técnica",
-		Descricao: "Base de documentação",
-		Status:    "ACTIVE",
+		ID:          "123e4567-e89b-12d3-a456-426614174000",
+		Name:        "Documentação Técnica",
+		Description: "Base de documentação",
+		Status:      "ACTIVE",
 	}
 
-	handler := NovoHandlerRecursos(&fakeClienteBackendRecursos{kb: kb})
+	handler := NewResourcesHandler(&fakeBackendClientResources{kb: kb})
 
-	conteudo, err := handler.LerRecurso(context.Background(), "agenthub://kb/123e4567-e89b-12d3-a456-426614174000")
+	content, err := handler.ReadResource(context.Background(), "agenthub://kb/123e4567-e89b-12d3-a456-426614174000")
 
 	if err != nil {
-		t.Fatalf("LerRecurso retornou erro inesperado: %v", err)
+		t.Fatalf("ReadResource retornou erro inesperado: %v", err)
 	}
 
-	if conteudo.URI != "agenthub://kb/123e4567-e89b-12d3-a456-426614174000" {
-		t.Errorf("URI do conteúdo incorreto: %s", conteudo.URI)
+	if content.URI != "agenthub://kb/123e4567-e89b-12d3-a456-426614174000" {
+		t.Errorf("URI do conteúdo incorreto: %s", content.URI)
 	}
 
-	if conteudo.TipoMIME != "application/json" {
-		t.Errorf("TipoMIME incorreto: %s", conteudo.TipoMIME)
+	if content.MIMEType != "application/json" {
+		t.Errorf("MIMEType incorreto: %s", content.MIMEType)
 	}
 
-	if !strings.Contains(conteudo.Texto, "Documentação Técnica") {
-		t.Errorf("conteúdo deveria conter o nome da KB, obteve: %s", conteudo.Texto)
+	if !strings.Contains(content.Text, "Documentação Técnica") {
+		t.Errorf("conteúdo deveria conter o nome da KB, obteve: %s", content.Text)
 	}
 }
 
-func TestHandlerRecursos_DeveRetornarErroParaURIInvalido(t *testing.T) {
-	handler := NovoHandlerRecursos(&fakeClienteBackendRecursos{})
+func TestResourcesHandler_DeveRetornarErroParaURIInvalido(t *testing.T) {
+	handler := NewResourcesHandler(&fakeBackendClientResources{})
 
-	_, err := handler.LerRecurso(context.Background(), "uri-invalido")
+	_, err := handler.ReadResource(context.Background(), "uri-invalido")
 
 	if err == nil {
 		t.Fatal("esperava erro para URI com formato inválido")
 	}
 }
 
-func TestHandlerRecursos_DeveRetornarErroParaURISemID(t *testing.T) {
-	handler := NovoHandlerRecursos(&fakeClienteBackendRecursos{})
+func TestResourcesHandler_DeveRetornarErroParaURISemID(t *testing.T) {
+	handler := NewResourcesHandler(&fakeBackendClientResources{})
 
-	_, err := handler.LerRecurso(context.Background(), "agenthub://kb/")
+	_, err := handler.ReadResource(context.Background(), "agenthub://kb/")
 
 	if err == nil {
 		t.Fatal("esperava erro para URI sem ID da knowledge base")
 	}
 }
 
-func TestHandlerRecursos_DeveRetornarErroQuandoKBNaoEncontrada(t *testing.T) {
-	erroNaoEncontrado := errors.New("knowledge base não encontrada: uuid-inexistente")
+func TestResourcesHandler_DeveRetornarErroQuandoKBNaoEncontrada(t *testing.T) {
+	notFoundErr := errors.New("knowledge base não encontrada: uuid-inexistente")
 
-	handler := NovoHandlerRecursos(&fakeClienteBackendRecursos{erroLer: erroNaoEncontrado})
+	handler := NewResourcesHandler(&fakeBackendClientResources{errGet: notFoundErr})
 
-	_, err := handler.LerRecurso(context.Background(), "agenthub://kb/uuid-inexistente")
+	_, err := handler.ReadResource(context.Background(), "agenthub://kb/uuid-inexistente")
 
 	if err == nil {
 		t.Fatal("esperava erro quando knowledge base não é encontrada")

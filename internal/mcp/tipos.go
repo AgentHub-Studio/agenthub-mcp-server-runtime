@@ -6,220 +6,220 @@ import "encoding/json"
 
 // ========== JSON-RPC 2.0 ==========
 
-// RequisicaoJSONRPC representa uma requisição JSON-RPC 2.0 recebida pelo servidor.
-type RequisicaoJSONRPC struct {
+// JSONRPCRequest represents a JSON-RPC 2.0 request received by the server.
+type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      interface{}     `json:"id,omitempty"`
-	Metodo  string          `json:"method"`
+	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
-// RespostaJSONRPC representa uma resposta JSON-RPC 2.0 enviada pelo servidor.
-type RespostaJSONRPC struct {
-	JSONRPC   string          `json:"jsonrpc"`
-	ID        interface{}     `json:"id,omitempty"`
-	Resultado json.RawMessage `json:"result,omitempty"`
-	Erro      *ErroJSONRPC    `json:"error,omitempty"`
+// JSONRPCResponse represents a JSON-RPC 2.0 response sent by the server.
+type JSONRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      interface{}     `json:"id,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *JSONRPCError   `json:"error,omitempty"`
 }
 
-// ErroJSONRPC representa um erro JSON-RPC 2.0.
-type ErroJSONRPC struct {
-	Codigo   int             `json:"code"`
-	Mensagem string          `json:"message"`
-	Dados    json.RawMessage `json:"data,omitempty"`
+// JSONRPCError represents a JSON-RPC 2.0 error object.
+type JSONRPCError struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 // ========== Códigos de Erro JSON-RPC ==========
 
 const (
-	// ErroParseamento indica falha ao parsear JSON
-	ErroParseamento = -32700
-	// ErroRequisicaoInvalida indica requisição malformada
-	ErroRequisicaoInvalida = -32600
-	// ErroMetodoNaoEncontrado indica método desconhecido
-	ErroMetodoNaoEncontrado = -32601
-	// ErroParametrosInvalidos indica parâmetros inválidos
-	ErroParametrosInvalidos = -32602
-	// ErroInterno indica erro interno do servidor
-	ErroInterno = -32603
-	// ErroServidor indica erro específico do servidor MCP
-	ErroServidor = -32000
+	// ErrCodeParse indicates failure to parse JSON
+	ErrCodeParse = -32700
+	// ErrCodeInvalidRequest indicates a malformed request
+	ErrCodeInvalidRequest = -32600
+	// ErrCodeMethodNotFound indicates an unknown method
+	ErrCodeMethodNotFound = -32601
+	// ErrCodeInvalidParams indicates invalid parameters
+	ErrCodeInvalidParams = -32602
+	// ErrCodeInternal indicates an internal server error
+	ErrCodeInternal = -32603
+	// ErrCodeServer indicates an MCP server-specific error
+	ErrCodeServer = -32000
 )
 
 // ========== Capacidades do Servidor MCP ==========
 
-// InformacoesServidor descreve o servidor MCP.
-type InformacoesServidor struct {
-	Nome            string `json:"name"`
-	Versao          string `json:"version"`
-	VersaoProtocolo string `json:"protocolVersion"`
+// ServerInfo describes the MCP server.
+type ServerInfo struct {
+	Name            string `json:"name"`
+	Version         string `json:"version"`
+	ProtocolVersion string `json:"protocolVersion"`
 }
 
-// InformacoesCliente descreve o cliente MCP conectado.
-type InformacoesCliente struct {
-	Nome   string `json:"name"`
-	Versao string `json:"version"`
+// ClientInfo describes the connected MCP client.
+type ClientInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
-// CapacidadeFerramentas indica suporte a listagem e chamada de tools.
-type CapacidadeFerramentas struct{}
+// ToolsCapability indicates support for listing and calling tools.
+type ToolsCapability struct{}
 
-// CapacidadeRecursos indica suporte a listagem e leitura de resources.
-type CapacidadeRecursos struct{}
+// ResourcesCapability indicates support for listing and reading resources.
+type ResourcesCapability struct{}
 
-// CapacidadePrompts indica suporte a listagem e obtenção de prompts.
-type CapacidadePrompts struct{}
+// PromptsCapability indicates support for listing and getting prompts.
+type PromptsCapability struct{}
 
-// CapacidadesServidor agrupa todas as capacidades suportadas pelo servidor.
-type CapacidadesServidor struct {
-	Ferramentas *CapacidadeFerramentas `json:"tools,omitempty"`
-	Recursos    *CapacidadeRecursos    `json:"resources,omitempty"`
-	Prompts     *CapacidadePrompts     `json:"prompts,omitempty"`
+// ServerCapabilities groups all capabilities supported by the server.
+type ServerCapabilities struct {
+	Tools     *ToolsCapability     `json:"tools,omitempty"`
+	Resources *ResourcesCapability `json:"resources,omitempty"`
+	Prompts   *PromptsCapability   `json:"prompts,omitempty"`
 }
 
-// ParamsInicializacao contém os parâmetros enviados pelo cliente no handshake.
-type ParamsInicializacao struct {
-	VersaoProtocolo string             `json:"protocolVersion"`
-	Capacidades     interface{}        `json:"capabilities"`
-	InfoCliente     InformacoesCliente `json:"clientInfo"`
+// InitializeParams contains parameters sent by the client during the handshake.
+type InitializeParams struct {
+	ProtocolVersion string      `json:"protocolVersion"`
+	Capabilities    interface{} `json:"capabilities"`
+	ClientInfo      ClientInfo  `json:"clientInfo"`
 }
 
-// ResultadoInicializacao é a resposta do servidor ao handshake de inicialização.
-type ResultadoInicializacao struct {
-	VersaoProtocolo string              `json:"protocolVersion"`
-	Capacidades     CapacidadesServidor `json:"capabilities"`
-	InfoServidor    InformacoesServidor `json:"serverInfo"`
+// InitializeResult is the server response to the initialization handshake.
+type InitializeResult struct {
+	ProtocolVersion string             `json:"protocolVersion"`
+	Capabilities    ServerCapabilities `json:"capabilities"`
+	ServerInfo      ServerInfo         `json:"serverInfo"`
 }
 
 // ========== Ferramentas (Tools) ==========
 
-// Ferramenta representa uma skill do AgentHub exposta como MCP Tool.
-type Ferramenta struct {
-	Nome        string                 `json:"name"`
-	Descricao   string                 `json:"description,omitempty"`
+// Tool represents an AgentHub skill exposed as an MCP Tool.
+type Tool struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
 	InputSchema map[string]interface{} `json:"inputSchema"`
 }
 
-// ResultadoListarFerramentas é o resultado do método tools/list.
-type ResultadoListarFerramentas struct {
-	Ferramentas []Ferramenta `json:"tools"`
+// ListToolsResult is the result of the tools/list method.
+type ListToolsResult struct {
+	Tools []Tool `json:"tools"`
 }
 
-// ParamsChamarFerramenta contém os parâmetros do método tools/call.
-type ParamsChamarFerramenta struct {
-	Nome      string                 `json:"name"`
-	Argumentos map[string]interface{} `json:"arguments,omitempty"`
+// CallToolParams contains the parameters of the tools/call method.
+type CallToolParams struct {
+	Name      string                 `json:"name"`
+	Arguments map[string]interface{} `json:"arguments,omitempty"`
 }
 
-// ItemConteudo representa um item de conteúdo retornado por uma ferramenta.
-type ItemConteudo struct {
-	Tipo  string `json:"type"` // "text", "image", "resource"
-	Texto string `json:"text,omitempty"`
-	Dados string `json:"data,omitempty"`
-	URI   string `json:"uri,omitempty"`
+// ContentItem represents a content item returned by a tool.
+type ContentItem struct {
+	Type string `json:"type"` // "text", "image", "resource"
+	Text string `json:"text,omitempty"`
+	Data string `json:"data,omitempty"`
+	URI  string `json:"uri,omitempty"`
 }
 
-// ResultadoChamarFerramenta é o resultado do método tools/call.
-type ResultadoChamarFerramenta struct {
-	Conteudo []ItemConteudo `json:"content"`
-	EhErro   bool           `json:"isError,omitempty"`
+// CallToolResult is the result of the tools/call method.
+type CallToolResult struct {
+	Content []ContentItem `json:"content"`
+	IsError bool          `json:"isError,omitempty"`
 }
 
 // ========== Recursos (Resources) ==========
 
-// Recurso representa uma Knowledge Base do AgentHub exposta como MCP Resource.
-type Recurso struct {
-	URI       string `json:"uri"`
-	Nome      string `json:"name"`
-	Descricao string `json:"description,omitempty"`
-	TipoMIME  string `json:"mimeType,omitempty"`
+// Resource represents an AgentHub Knowledge Base exposed as an MCP Resource.
+type Resource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mimeType,omitempty"`
 }
 
-// ResultadoListarRecursos é o resultado do método resources/list.
-type ResultadoListarRecursos struct {
-	Recursos []Recurso `json:"resources"`
+// ListResourcesResult is the result of the resources/list method.
+type ListResourcesResult struct {
+	Resources []Resource `json:"resources"`
 }
 
-// ParamsLerRecurso contém os parâmetros do método resources/read.
-type ParamsLerRecurso struct {
+// ReadResourceParams contains the parameters of the resources/read method.
+type ReadResourceParams struct {
 	URI string `json:"uri"`
 }
 
-// ConteudoRecurso representa o conteúdo de um recurso lido.
-type ConteudoRecurso struct {
+// ResourceContent represents the content of a read resource.
+type ResourceContent struct {
 	URI      string `json:"uri"`
-	TipoMIME string `json:"mimeType,omitempty"`
-	Texto    string `json:"text,omitempty"`
-	Blob     string `json:"blob,omitempty"` // Base64 codificado
+	MIMEType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Blob     string `json:"blob,omitempty"` // Base64 encoded
 }
 
-// ResultadoLerRecurso é o resultado do método resources/read.
-type ResultadoLerRecurso struct {
-	Conteudos []ConteudoRecurso `json:"contents"`
+// ReadResourceResult is the result of the resources/read method.
+type ReadResourceResult struct {
+	Contents []ResourceContent `json:"contents"`
 }
 
 // ========== Prompts ==========
 
-// ArgumentoPrompt descreve um argumento aceito por um prompt.
-type ArgumentoPrompt struct {
-	Nome      string `json:"name"`
-	Descricao string `json:"description,omitempty"`
-	Obrigatorio bool  `json:"required,omitempty"`
+// PromptArgument describes an argument accepted by a prompt.
+type PromptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
 }
 
-// Prompt representa um prompt curado exposto pelo servidor MCP.
+// Prompt represents a curated prompt exposed by the MCP server.
 type Prompt struct {
-	Nome      string            `json:"name"`
-	Descricao string            `json:"description,omitempty"`
-	Argumentos []ArgumentoPrompt `json:"arguments,omitempty"`
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Arguments   []PromptArgument `json:"arguments,omitempty"`
 }
 
-// ResultadoListarPrompts é o resultado do método prompts/list.
-type ResultadoListarPrompts struct {
+// ListPromptsResult is the result of the prompts/list method.
+type ListPromptsResult struct {
 	Prompts []Prompt `json:"prompts"`
 }
 
-// ParamsObterPrompt contém os parâmetros do método prompts/get.
-type ParamsObterPrompt struct {
-	Nome      string            `json:"name"`
-	Argumentos map[string]string `json:"arguments,omitempty"`
+// GetPromptParams contains the parameters of the prompts/get method.
+type GetPromptParams struct {
+	Name      string            `json:"name"`
+	Arguments map[string]string `json:"arguments,omitempty"`
 }
 
-// MensagemPrompt representa uma mensagem no resultado de um prompt.
-type MensagemPrompt struct {
-	Papel    string       `json:"role"` // "user", "assistant"
-	Conteudo ItemConteudo `json:"content"`
+// PromptMessage represents a message in the result of a prompt.
+type PromptMessage struct {
+	Role    string      `json:"role"` // "user", "assistant"
+	Content ContentItem `json:"content"`
 }
 
-// ResultadoObterPrompt é o resultado do método prompts/get.
-type ResultadoObterPrompt struct {
-	Descricao string           `json:"description,omitempty"`
-	Mensagens []MensagemPrompt `json:"messages"`
+// GetPromptResult is the result of the prompts/get method.
+type GetPromptResult struct {
+	Description string          `json:"description,omitempty"`
+	Messages    []PromptMessage `json:"messages"`
 }
 
 // ========== Funções auxiliares ==========
 
-// NovaRespostaJSONRPC cria uma resposta JSON-RPC 2.0 de sucesso.
-func NovaRespostaJSONRPC(id interface{}, resultado interface{}) (*RespostaJSONRPC, error) {
-	resultadoJSON, err := json.Marshal(resultado)
+// NewJSONRPCResponse creates a successful JSON-RPC 2.0 response.
+func NewJSONRPCResponse(id interface{}, result interface{}) (*JSONRPCResponse, error) {
+	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return nil, err
 	}
-	return &RespostaJSONRPC{
-		JSONRPC:   "2.0",
-		ID:        id,
-		Resultado: resultadoJSON,
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result:  resultJSON,
 	}, nil
 }
 
-// NovoErroJSONRPC cria uma resposta JSON-RPC 2.0 de erro.
-func NovoErroJSONRPC(id interface{}, codigo int, mensagem string) *RespostaJSONRPC {
-	return &RespostaJSONRPC{
+// NewJSONRPCError creates a JSON-RPC 2.0 error response.
+func NewJSONRPCError(id interface{}, code int, message string) *JSONRPCResponse {
+	return &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
-		Erro: &ErroJSONRPC{
-			Codigo:   codigo,
-			Mensagem: mensagem,
+		Error: &JSONRPCError{
+			Code:    code,
+			Message: message,
 		},
 	}
 }

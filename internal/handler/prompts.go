@@ -11,87 +11,87 @@ import (
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
 )
 
-// catálogo de prompts curados disponíveis no servidor MCP.
-var catalogoPrompts = []mcp.Prompt{
+// promptCatalog holds the curated prompts available on the MCP server.
+var promptCatalog = []mcp.Prompt{
 	{
-		Nome:      "pesquisar-conhecimento",
-		Descricao: "Realiza uma busca semântica na base de conhecimento do AgentHub e retorna documentos relevantes.",
-		Argumentos: []mcp.ArgumentoPrompt{
+		Name:        "pesquisar-conhecimento",
+		Description: "Realiza uma busca semântica na base de conhecimento do AgentHub e retorna documentos relevantes.",
+		Arguments: []mcp.PromptArgument{
 			{
-				Nome:        "consulta",
-				Descricao:   "Texto ou pergunta para buscar na base de conhecimento",
-				Obrigatorio: true,
+				Name:        "consulta",
+				Description: "Texto ou pergunta para buscar na base de conhecimento",
+				Required:    true,
 			},
 			{
-				Nome:        "kb_id",
-				Descricao:   "ID da knowledge base específica (opcional; busca em todas se omitido)",
-				Obrigatorio: false,
+				Name:        "kb_id",
+				Description: "ID da knowledge base específica (opcional; busca em todas se omitido)",
+				Required:    false,
 			},
 			{
-				Nome:        "limite",
-				Descricao:   "Número máximo de documentos a retornar (padrão: 5)",
-				Obrigatorio: false,
+				Name:        "limite",
+				Description: "Número máximo de documentos a retornar (padrão: 5)",
+				Required:    false,
 			},
 		},
 	},
 	{
-		Nome:      "executar-skill",
-		Descricao: "Executa uma skill do AgentHub com os parâmetros fornecidos via skill-runtime.",
-		Argumentos: []mcp.ArgumentoPrompt{
+		Name:        "executar-skill",
+		Description: "Executa uma skill do AgentHub com os parâmetros fornecidos via skill-runtime.",
+		Arguments: []mcp.PromptArgument{
 			{
-				Nome:        "skill_slug",
-				Descricao:   "Identificador único da skill a executar (ex: 'document-search', 'sql-query')",
-				Obrigatorio: true,
+				Name:        "skill_slug",
+				Description: "Identificador único da skill a executar (ex: 'document-search', 'sql-query')",
+				Required:    true,
 			},
 			{
-				Nome:        "input_json",
-				Descricao:   "Parâmetros de entrada para a skill em formato JSON",
-				Obrigatorio: true,
+				Name:        "input_json",
+				Description: "Parâmetros de entrada para a skill em formato JSON",
+				Required:    true,
 			},
 		},
 	},
 }
 
-// HandlerPrompts implementa a interface GerenciadorPrompts do MCPServidor.
-// Fornece prompts curados para operações comuns do AgentHub.
-type HandlerPrompts struct{}
+// PromptsHandlerImpl implements the PromptsHandler interface of the MCPServer.
+// Provides curated prompts for common AgentHub operations.
+type PromptsHandlerImpl struct{}
 
-// NovoHandlerPrompts cria um novo handler de prompts MCP.
-func NovoHandlerPrompts() *HandlerPrompts {
-	return &HandlerPrompts{}
+// NewPromptsHandler creates a new MCP prompts handler.
+func NewPromptsHandler() *PromptsHandlerImpl {
+	return &PromptsHandlerImpl{}
 }
 
-// ListarPrompts retorna a lista de prompts curados disponíveis no servidor.
-func (h *HandlerPrompts) ListarPrompts(ctx context.Context) ([]mcp.Prompt, error) {
-	return catalogoPrompts, nil
+// ListPrompts returns the list of curated prompts available on the server.
+func (h *PromptsHandlerImpl) ListPrompts(ctx context.Context) ([]mcp.Prompt, error) {
+	return promptCatalog, nil
 }
 
-// ObterPrompt retorna um prompt renderizado com os argumentos fornecidos.
-// Cada prompt tem um template de mensagem que é preenchido com os argumentos.
-func (h *HandlerPrompts) ObterPrompt(
+// GetPrompt returns a prompt rendered with the provided arguments.
+// Each prompt has a message template that is filled with the arguments.
+func (h *PromptsHandlerImpl) GetPrompt(
 	ctx context.Context,
-	nome string,
-	argumentos map[string]string,
-) (*mcp.ResultadoObterPrompt, error) {
-	switch nome {
+	name string,
+	arguments map[string]string,
+) (*mcp.GetPromptResult, error) {
+	switch name {
 	case "pesquisar-conhecimento":
-		return h.renderizarPesquisarConhecimento(argumentos)
+		return h.renderSearchKnowledge(arguments)
 	case "executar-skill":
-		return h.renderizarExecutarSkill(argumentos)
+		return h.renderExecuteSkill(arguments)
 	default:
-		return nil, fmt.Errorf("prompt não encontrado: '%s'", nome)
+		return nil, fmt.Errorf("prompt não encontrado: '%s'", name)
 	}
 }
 
-// renderizarPesquisarConhecimento gera o prompt de busca em knowledge base.
-func (h *HandlerPrompts) renderizarPesquisarConhecimento(args map[string]string) (*mcp.ResultadoObterPrompt, error) {
-	consulta := args["consulta"]
-	if consulta == "" {
+// renderSearchKnowledge generates the knowledge base search prompt.
+func (h *PromptsHandlerImpl) renderSearchKnowledge(args map[string]string) (*mcp.GetPromptResult, error) {
+	query := args["consulta"]
+	if query == "" {
 		return nil, fmt.Errorf("argumento 'consulta' é obrigatório para o prompt 'pesquisar-conhecimento'")
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Pesquise na base de conhecimento por: %s\n\n", consulta))
+	sb.WriteString(fmt.Sprintf("Pesquise na base de conhecimento por: %s\n\n", query))
 
 	if kbID := args["kb_id"]; kbID != "" {
 		sb.WriteString(fmt.Sprintf("Base de conhecimento específica: %s\n", kbID))
@@ -99,30 +99,30 @@ func (h *HandlerPrompts) renderizarPesquisarConhecimento(args map[string]string)
 		sb.WriteString("Buscar em todas as bases de conhecimento disponíveis.\n")
 	}
 
-	if limite := args["limite"]; limite != "" {
-		sb.WriteString(fmt.Sprintf("Retornar no máximo %s documentos.\n", limite))
+	if limit := args["limite"]; limit != "" {
+		sb.WriteString(fmt.Sprintf("Retornar no máximo %s documentos.\n", limit))
 	} else {
 		sb.WriteString("Retornar no máximo 5 documentos.\n")
 	}
 
 	sb.WriteString("\nPor favor, use a ferramenta 'document-search' para realizar a busca e apresente os resultados de forma clara e organizada.")
 
-	return &mcp.ResultadoObterPrompt{
-		Descricao: "Busca semântica na base de conhecimento do AgentHub",
-		Mensagens: []mcp.MensagemPrompt{
+	return &mcp.GetPromptResult{
+		Description: "Busca semântica na base de conhecimento do AgentHub",
+		Messages: []mcp.PromptMessage{
 			{
-				Papel: "user",
-				Conteudo: mcp.ItemConteudo{
-					Tipo:  "text",
-					Texto: sb.String(),
+				Role: "user",
+				Content: mcp.ContentItem{
+					Type: "text",
+					Text: sb.String(),
 				},
 			},
 		},
 	}, nil
 }
 
-// renderizarExecutarSkill gera o prompt para execução de uma skill.
-func (h *HandlerPrompts) renderizarExecutarSkill(args map[string]string) (*mcp.ResultadoObterPrompt, error) {
+// renderExecuteSkill generates the prompt for executing a skill.
+func (h *PromptsHandlerImpl) renderExecuteSkill(args map[string]string) (*mcp.GetPromptResult, error) {
 	skillSlug := args["skill_slug"]
 	if skillSlug == "" {
 		return nil, fmt.Errorf("argumento 'skill_slug' é obrigatório para o prompt 'executar-skill'")
@@ -133,20 +133,20 @@ func (h *HandlerPrompts) renderizarExecutarSkill(args map[string]string) (*mcp.R
 		return nil, fmt.Errorf("argumento 'input_json' é obrigatório para o prompt 'executar-skill'")
 	}
 
-	mensagem := fmt.Sprintf(
+	message := fmt.Sprintf(
 		"Execute a skill '%s' com os seguintes parâmetros:\n\n%s\n\nUse a ferramenta correspondente no AgentHub e retorne o resultado da execução.",
 		skillSlug,
 		inputJSON,
 	)
 
-	return &mcp.ResultadoObterPrompt{
-		Descricao: fmt.Sprintf("Execução da skill '%s' via AgentHub", skillSlug),
-		Mensagens: []mcp.MensagemPrompt{
+	return &mcp.GetPromptResult{
+		Description: fmt.Sprintf("Execução da skill '%s' via AgentHub", skillSlug),
+		Messages: []mcp.PromptMessage{
 			{
-				Papel: "user",
-				Conteudo: mcp.ItemConteudo{
-					Tipo:  "text",
-					Texto: mensagem,
+				Role: "user",
+				Content: mcp.ContentItem{
+					Type: "text",
+					Text: message,
 				},
 			},
 		},

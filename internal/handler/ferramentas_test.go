@@ -11,35 +11,35 @@ import (
 
 // ========== Fakes para teste ==========
 
-// fakeClienteBackendFerramentas simula o cliente backend para testes de ferramentas.
-type fakeClienteBackendFerramentas struct {
+// fakeBackendClientTools simulates the backend client for tools tests.
+type fakeBackendClientTools struct {
 	skills []backend.SkillDTO
-	erro   error
+	err    error
 }
 
-func (f *fakeClienteBackendFerramentas) ListarSkillsAtivas(ctx context.Context) ([]backend.SkillDTO, error) {
-	return f.skills, f.erro
+func (f *fakeBackendClientTools) ListActiveSkills(ctx context.Context) ([]backend.SkillDTO, error) {
+	return f.skills, f.err
 }
 
-// fakeClienteSkillRuntime simula o cliente skill-runtime para testes.
-type fakeClienteSkillRuntime struct {
-	resultado *skillruntime.ResultadoSkill
-	erro      error
+// fakeSkillRuntimeClient simulates the skill-runtime client for tests.
+type fakeSkillRuntimeClient struct {
+	result *skillruntime.SkillResult
+	err    error
 }
 
-func (f *fakeClienteSkillRuntime) InvocarSkill(ctx context.Context, req skillruntime.RequisicaoInvocarSkill) (*skillruntime.ResultadoSkill, error) {
-	return f.resultado, f.erro
+func (f *fakeSkillRuntimeClient) InvokeSkill(ctx context.Context, req skillruntime.InvokeSkillRequest) (*skillruntime.SkillResult, error) {
+	return f.result, f.err
 }
 
 // ========== Testes ==========
 
-func TestHandlerFerramentas_DeveListarSkillsComoFerramentas(t *testing.T) {
+func TestToolsHandler_DeveListarSkillsComoFerramentas(t *testing.T) {
 	skills := []backend.SkillDTO{
 		{
-			ID:        "id-1",
-			Nome:      "Busca de Documentos",
-			Slug:      "document-search",
-			Descricao: "Busca semântica em documentos",
+			ID:          "id-1",
+			Name:        "Busca de Documentos",
+			Slug:        "document-search",
+			Description: "Busca semântica em documentos",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -49,40 +49,40 @@ func TestHandlerFerramentas_DeveListarSkillsComoFerramentas(t *testing.T) {
 			},
 		},
 		{
-			ID:        "id-2",
-			Nome:      "Consulta SQL",
-			Slug:      "sql-query",
-			Descricao: "Executa queries SQL",
+			ID:          "id-2",
+			Name:        "Consulta SQL",
+			Slug:        "sql-query",
+			Description: "Executa queries SQL",
 		},
 	}
 
-	handler := NovoHandlerFerramentas(
-		&fakeClienteBackendFerramentas{skills: skills},
-		&fakeClienteSkillRuntime{},
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{skills: skills},
+		&fakeSkillRuntimeClient{},
 		"tenant-123",
 	)
 
-	ferramentas, err := handler.ListarFerramentas(context.Background())
+	tools, err := handler.ListTools(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarFerramentas retornou erro inesperado: %v", err)
+		t.Fatalf("ListTools retornou erro inesperado: %v", err)
 	}
 
-	if len(ferramentas) != 2 {
-		t.Fatalf("esperava 2 ferramentas, obteve %d", len(ferramentas))
+	if len(tools) != 2 {
+		t.Fatalf("esperava 2 ferramentas, obteve %d", len(tools))
 	}
 
-	// O nome da ferramenta deve ser o slug da skill
-	if ferramentas[0].Nome != "document-search" {
-		t.Errorf("esperava nome 'document-search', obteve '%s'", ferramentas[0].Nome)
+	// Tool name must be the skill slug
+	if tools[0].Name != "document-search" {
+		t.Errorf("esperava nome 'document-search', obteve '%s'", tools[0].Name)
 	}
 
-	if ferramentas[1].Nome != "sql-query" {
-		t.Errorf("esperava nome 'sql-query', obteve '%s'", ferramentas[1].Nome)
+	if tools[1].Name != "sql-query" {
+		t.Errorf("esperava nome 'sql-query', obteve '%s'", tools[1].Name)
 	}
 }
 
-func TestHandlerFerramentas_DeveUsarSchemaParaoCasoDeSkillSemSchema(t *testing.T) {
+func TestToolsHandler_DeveUsarSchemaParaoCasoDeSkillSemSchema(t *testing.T) {
 	skills := []backend.SkillDTO{
 		{
 			Slug:        "skill-sem-schema",
@@ -90,97 +90,97 @@ func TestHandlerFerramentas_DeveUsarSchemaParaoCasoDeSkillSemSchema(t *testing.T
 		},
 	}
 
-	handler := NovoHandlerFerramentas(
-		&fakeClienteBackendFerramentas{skills: skills},
-		&fakeClienteSkillRuntime{},
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{skills: skills},
+		&fakeSkillRuntimeClient{},
 		"tenant-123",
 	)
 
-	ferramentas, err := handler.ListarFerramentas(context.Background())
+	tools, err := handler.ListTools(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarFerramentas retornou erro inesperado: %v", err)
+		t.Fatalf("ListTools retornou erro inesperado: %v", err)
 	}
 
-	if ferramentas[0].InputSchema == nil {
+	if tools[0].InputSchema == nil {
 		t.Error("InputSchema não deve ser nil mesmo quando skill não tem schema")
 	}
 }
 
-func TestHandlerFerramentas_DeveRetornarErroDoBackend(t *testing.T) {
-	erroBackend := errors.New("backend indisponível")
+func TestToolsHandler_DeveRetornarErroDoBackend(t *testing.T) {
+	backendErr := errors.New("backend indisponível")
 
-	handler := NovoHandlerFerramentas(
-		&fakeClienteBackendFerramentas{erro: erroBackend},
-		&fakeClienteSkillRuntime{},
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{err: backendErr},
+		&fakeSkillRuntimeClient{},
 		"tenant-123",
 	)
 
-	_, err := handler.ListarFerramentas(context.Background())
+	_, err := handler.ListTools(context.Background())
 
 	if err == nil {
 		t.Fatal("esperava erro ao listar ferramentas com backend indisponível")
 	}
 }
 
-func TestHandlerFerramentas_DeveChamarSkillRuntimeAoChamarFerramenta(t *testing.T) {
-	resultadoEsperado := &skillruntime.ResultadoSkill{
+func TestToolsHandler_DeveChamarSkillRuntimeAoChamarFerramenta(t *testing.T) {
+	expectedResult := &skillruntime.SkillResult{
 		SkillSlug: "document-search",
-		Sucesso:   true,
-		Resultado: map[string]interface{}{"documentos": []interface{}{}},
+		Success:   true,
+		Result:    map[string]interface{}{"documentos": []interface{}{}},
 	}
 
-	handler := NovoHandlerFerramentas(
-		&fakeClienteBackendFerramentas{},
-		&fakeClienteSkillRuntime{resultado: resultadoEsperado},
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{},
+		&fakeSkillRuntimeClient{result: expectedResult},
 		"tenant-123",
 	)
 
-	resultado, err := handler.ChamarFerramenta(context.Background(), "document-search", map[string]interface{}{
+	result, err := handler.CallTool(context.Background(), "document-search", map[string]interface{}{
 		"query": "AgentHub architecture",
 	})
 
 	if err != nil {
-		t.Fatalf("ChamarFerramenta retornou erro inesperado: %v", err)
+		t.Fatalf("CallTool retornou erro inesperado: %v", err)
 	}
 
-	if resultado.EhErro {
+	if result.IsError {
 		t.Error("resultado não deveria ser erro para execução bem-sucedida")
 	}
 
-	if len(resultado.Conteudo) == 0 {
+	if len(result.Content) == 0 {
 		t.Error("resultado deveria ter pelo menos um item de conteúdo")
 	}
 
-	if resultado.Conteudo[0].Tipo != "text" {
-		t.Errorf("tipo do conteúdo deveria ser 'text', obteve '%s'", resultado.Conteudo[0].Tipo)
+	if result.Content[0].Type != "text" {
+		t.Errorf("tipo do conteúdo deveria ser 'text', obteve '%s'", result.Content[0].Type)
 	}
 }
 
-func TestHandlerFerramentas_DeveRetornarErroParaNomeVazio(t *testing.T) {
-	handler := NovoHandlerFerramentas(
-		&fakeClienteBackendFerramentas{},
-		&fakeClienteSkillRuntime{},
+func TestToolsHandler_DeveRetornarErroParaNomeVazio(t *testing.T) {
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{},
+		&fakeSkillRuntimeClient{},
 		"tenant-123",
 	)
 
-	_, err := handler.ChamarFerramenta(context.Background(), "", nil)
+	_, err := handler.CallTool(context.Background(), "", nil)
 
 	if err == nil {
 		t.Fatal("esperava erro para nome de ferramenta vazio")
 	}
 }
 
-func TestHandlerFerramentas_DevePropagareErroDoSkillRuntime(t *testing.T) {
-	erroRuntime := errors.New("skill não encontrada")
+func TestToolsHandler_DevePropagareErroDoSkillRuntime(t *testing.T) {
+	runtimeErr := errors.New("skill não encontrada")
 
-	handler := NovoHandlerFerramentas(
-		&fakeClienteBackendFerramentas{},
-		&fakeClienteSkillRuntime{erro: erroRuntime},
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{},
+		&fakeSkillRuntimeClient{err: runtimeErr},
 		"tenant-123",
 	)
 
-	_, err := handler.ChamarFerramenta(context.Background(), "skill-inexistente", nil)
+	_, err := handler.CallTool(context.Background(), "skill-inexistente", nil)
 
 	if err == nil {
 		t.Fatal("esperava erro quando skill-runtime retorna erro")

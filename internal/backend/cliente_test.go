@@ -8,87 +8,87 @@ import (
 	"testing"
 )
 
-// ========== Testes de ClienteBackend ==========
+// ========== Testes de BackendClient ==========
 
-func TestClienteBackend_DeveEnviarHeaderTenantID(t *testing.T) {
-	tenantIDRecebido := ""
+func TestBackendClient_DeveEnviarHeaderTenantID(t *testing.T) {
+	receivedTenantID := ""
 
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tenantIDRecebido = r.Header.Get("X-Tenant-ID")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTenantID = r.Header.Get("X-Tenant-ID")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"content": []SkillDTO{},
 		})
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-abc-123", "token-teste")
+	client := NewBackendClient(server.URL, "tenant-abc-123", "token-teste")
 
-	_, err := cliente.ListarSkillsAtivas(context.Background())
+	_, err := client.ListActiveSkills(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarSkillsAtivas retornou erro inesperado: %v", err)
+		t.Fatalf("ListActiveSkills retornou erro inesperado: %v", err)
 	}
 
-	if tenantIDRecebido != "tenant-abc-123" {
-		t.Errorf("esperava X-Tenant-ID 'tenant-abc-123', obteve '%s'", tenantIDRecebido)
+	if receivedTenantID != "tenant-abc-123" {
+		t.Errorf("esperava X-Tenant-ID 'tenant-abc-123', obteve '%s'", receivedTenantID)
 	}
 }
 
-func TestClienteBackend_DeveEnviarHeaderAuthorization(t *testing.T) {
-	authRecebido := ""
+func TestBackendClient_DeveEnviarHeaderAuthorization(t *testing.T) {
+	receivedAuth := ""
 
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authRecebido = r.Header.Get("Authorization")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"content": []SkillDTO{}})
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "meu-token-secreto")
+	client := NewBackendClient(server.URL, "tenant-123", "meu-token-secreto")
 
-	_, err := cliente.ListarSkillsAtivas(context.Background())
+	_, err := client.ListActiveSkills(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarSkillsAtivas retornou erro inesperado: %v", err)
+		t.Fatalf("ListActiveSkills retornou erro inesperado: %v", err)
 	}
 
-	if authRecebido != "Bearer meu-token-secreto" {
-		t.Errorf("esperava 'Bearer meu-token-secreto', obteve '%s'", authRecebido)
+	if receivedAuth != "Bearer meu-token-secreto" {
+		t.Errorf("esperava 'Bearer meu-token-secreto', obteve '%s'", receivedAuth)
 	}
 }
 
-func TestClienteBackend_DeveDeserializarListaDeSkills(t *testing.T) {
-	skillsRetornadas := []SkillDTO{
+func TestBackendClient_DeveDeserializarListaDeSkills(t *testing.T) {
+	returnedSkills := []SkillDTO{
 		{
-			ID:        "id-1",
-			Nome:      "Busca de Documentos",
-			Slug:      "document-search",
-			Descricao: "Busca semântica",
-			Status:    "ACTIVE",
+			ID:          "id-1",
+			Name:        "Busca de Documentos",
+			Slug:        "document-search",
+			Description: "Busca semântica",
+			Status:      "ACTIVE",
 		},
 		{
-			ID:    "id-2",
-			Nome:  "Consulta SQL",
-			Slug:  "sql-query",
+			ID:     "id-2",
+			Name:   "Consulta SQL",
+			Slug:   "sql-query",
 			Status: "ACTIVE",
 		},
 	}
 
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"content": skillsRetornadas,
+			"content": returnedSkills,
 		})
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "")
+	client := NewBackendClient(server.URL, "tenant-123", "")
 
-	skills, err := cliente.ListarSkillsAtivas(context.Background())
+	skills, err := client.ListActiveSkills(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarSkillsAtivas retornou erro inesperado: %v", err)
+		t.Fatalf("ListActiveSkills retornou erro inesperado: %v", err)
 	}
 
 	if len(skills) != 2 {
@@ -100,111 +100,111 @@ func TestClienteBackend_DeveDeserializarListaDeSkills(t *testing.T) {
 	}
 }
 
-func TestClienteBackend_DeveRetornarErroEmStatus4xx(t *testing.T) {
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestBackendClient_DeveRetornarErroEmStatus4xx(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "não autorizado", http.StatusUnauthorized)
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "token-invalido")
+	client := NewBackendClient(server.URL, "tenant-123", "token-invalido")
 
-	_, err := cliente.ListarSkillsAtivas(context.Background())
+	_, err := client.ListActiveSkills(context.Background())
 
 	if err == nil {
 		t.Fatal("esperava erro para resposta 401 do backend")
 	}
 }
 
-func TestClienteBackend_DeveRetornarErroEmStatus5xx(t *testing.T) {
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestBackendClient_DeveRetornarErroEmStatus5xx(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "erro interno", http.StatusInternalServerError)
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "")
+	client := NewBackendClient(server.URL, "tenant-123", "")
 
-	_, err := cliente.ListarSkillsAtivas(context.Background())
+	_, err := client.ListActiveSkills(context.Background())
 
 	if err == nil {
 		t.Fatal("esperava erro para resposta 500 do backend")
 	}
 }
 
-func TestClienteBackend_DeveListarKnowledgeBases(t *testing.T) {
-	kbsRetornadas := []KnowledgeBaseDTO{
+func TestBackendClient_DeveListarKnowledgeBases(t *testing.T) {
+	returnedKBs := []KnowledgeBaseDTO{
 		{
-			ID:        "kb-id-1",
-			Nome:      "Documentação Técnica",
-			Descricao: "Docs técnicos",
-			Status:    "ACTIVE",
+			ID:          "kb-id-1",
+			Name:        "Documentação Técnica",
+			Description: "Docs técnicos",
+			Status:      "ACTIVE",
 		},
 	}
 
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"content": kbsRetornadas,
+			"content": returnedKBs,
 		})
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "")
+	client := NewBackendClient(server.URL, "tenant-123", "")
 
-	kbs, err := cliente.ListarKnowledgeBases(context.Background())
+	kbs, err := client.ListKnowledgeBases(context.Background())
 
 	if err != nil {
-		t.Fatalf("ListarKnowledgeBases retornou erro inesperado: %v", err)
+		t.Fatalf("ListKnowledgeBases retornou erro inesperado: %v", err)
 	}
 
 	if len(kbs) != 1 {
 		t.Fatalf("esperava 1 knowledge base, obteve %d", len(kbs))
 	}
 
-	if kbs[0].Nome != "Documentação Técnica" {
-		t.Errorf("esperava nome 'Documentação Técnica', obteve '%s'", kbs[0].Nome)
+	if kbs[0].Name != "Documentação Técnica" {
+		t.Errorf("esperava nome 'Documentação Técnica', obteve '%s'", kbs[0].Name)
 	}
 }
 
-func TestClienteBackend_DeveLerKnowledgeBaseEspecifica(t *testing.T) {
-	idCapturado := ""
+func TestBackendClient_DeveLerKnowledgeBaseEspecifica(t *testing.T) {
+	capturedID := ""
 
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		idCapturado = r.URL.Path
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedID = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(KnowledgeBaseDTO{
 			ID:     "kb-uuid-123",
-			Nome:   "Base de Teste",
+			Name:   "Base de Teste",
 			Status: "ACTIVE",
 		})
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "")
+	client := NewBackendClient(server.URL, "tenant-123", "")
 
-	kb, err := cliente.LerKnowledgeBase(context.Background(), "kb-uuid-123")
+	kb, err := client.GetKnowledgeBase(context.Background(), "kb-uuid-123")
 
 	if err != nil {
-		t.Fatalf("LerKnowledgeBase retornou erro inesperado: %v", err)
+		t.Fatalf("GetKnowledgeBase retornou erro inesperado: %v", err)
 	}
 
 	if kb.ID != "kb-uuid-123" {
 		t.Errorf("esperava ID 'kb-uuid-123', obteve '%s'", kb.ID)
 	}
 
-	if idCapturado != "/api/knowledge-bases/kb-uuid-123" {
-		t.Errorf("URL incorreta chamada: %s", idCapturado)
+	if capturedID != "/api/knowledge-bases/kb-uuid-123" {
+		t.Errorf("URL incorreta chamada: %s", capturedID)
 	}
 }
 
-func TestClienteBackend_DeveRetornarErroParaKBNaoEncontrada(t *testing.T) {
-	servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestBackendClient_DeveRetornarErroParaKBNaoEncontrada(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
-	defer servidor.Close()
+	defer server.Close()
 
-	cliente := NovoClienteBackend(servidor.URL, "tenant-123", "")
+	client := NewBackendClient(server.URL, "tenant-123", "")
 
-	_, err := cliente.LerKnowledgeBase(context.Background(), "kb-inexistente")
+	_, err := client.GetKnowledgeBase(context.Background(), "kb-inexistente")
 
 	if err == nil {
 		t.Fatal("esperava erro para knowledge base não encontrada (404)")
