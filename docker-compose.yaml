@@ -1,0 +1,20 @@
+services:
+  agenthub-mcp-server-runtime:
+    build: .
+    container_name: agenthub-mcp-server-runtime
+    restart: unless-stopped
+    ports:
+      - "8086:8080"
+    environment:
+      HTTP_PORT: 8080
+      STDIO_MODE: "false"
+      AGENTHUB_BACKEND_URL: http://agenthub.backend.internal:8090
+    networks:
+      agenthub-shared-net:
+        aliases:
+          - agenthub.mcp-server.internal
+
+networks:
+  agenthub-shared-net:
+    external: true
+    name: agenthub-shared-net
