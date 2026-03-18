@@ -107,6 +107,7 @@ func getEnv(key, defaultValue string) string {
 }
 
 func main() {
+	printBanner()
 	log.Println("Starting AgentHub MCP Server Runtime...")
 
 	config := loadConfig()
