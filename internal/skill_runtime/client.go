@@ -1,5 +1,5 @@
-// Pacote skill_runtime implementa o cliente HTTP para o agenthub-skill-runtime.
-// Responsável por invocar skills do AgentHub via POST /api/v1/skills/invoke.
+// Package skill_runtime implements the HTTP client for the agenthub-skill-runtime.
+// Responsible for invoking AgentHub skills via POST /api/v1/skills/invoke.
 package skill_runtime
 
 import (
@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/tenant"
 )
 
 // InvokeSkillRequest represents the payload to invoke a skill.
@@ -32,16 +34,14 @@ type SkillResult struct {
 
 // SkillRuntimeClient performs skill invocations on the agenthub-skill-runtime.
 type SkillRuntimeClient struct {
-	baseURL  string
-	tenantID string
-	http     *http.Client
+	baseURL string
+	http    *http.Client
 }
 
 // NewSkillRuntimeClient creates a new HTTP client for the agenthub-skill-runtime.
-func NewSkillRuntimeClient(baseURL, tenantID string) *SkillRuntimeClient {
+func NewSkillRuntimeClient(baseURL string) *SkillRuntimeClient {
 	return &SkillRuntimeClient{
-		baseURL:  baseURL,
-		tenantID: tenantID,
+		baseURL: baseURL,
 		http: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -50,50 +50,57 @@ func NewSkillRuntimeClient(baseURL, tenantID string) *SkillRuntimeClient {
 
 // InvokeSkill invokes a skill by slug with the provided arguments.
 // Calls POST /api/v1/skills/invoke on the skill-runtime.
+// Tenant ID and Bearer token are read from the context.
 func (c *SkillRuntimeClient) InvokeSkill(ctx context.Context, req InvokeSkillRequest) (*SkillResult, error) {
 	url := fmt.Sprintf("%s/api/v1/skills/invoke", c.baseURL)
 
-	// Ensure tenantId is filled
+	// Populate tenant ID from context when not set in the request
 	if req.TenantID == "" {
-		req.TenantID = c.tenantID
+		req.TenantID = tenant.IDFromContext(ctx)
 	}
 
-	// Default timeout of 30s if not specified
 	if req.Timeout == 0 {
 		req.Timeout = 30000
 	}
 
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao serializar requisição: %w", err)
+		return nil, fmt.Errorf("error serializing request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("erro ao criar requisição HTTP: %w", err)
+		return nil, fmt.Errorf("error creating HTTP request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Tenant-ID", c.tenantID)
+
+	if id := tenant.IDFromContext(ctx); id != "" {
+		httpReq.Header.Set("X-Tenant-ID", id)
+	}
+
+	if tok := tenant.TokenFromContext(ctx); tok != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+tok)
+	}
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao chamar skill-runtime: %w", err)
+		return nil, fmt.Errorf("error calling skill-runtime: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao ler resposta: %w", err)
+		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("skill-runtime retornou status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("skill-runtime returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var result SkillResult
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("erro ao decodificar resultado da skill: %w", err)
+		return nil, fmt.Errorf("error decoding skill result: %w", err)
 	}
 
 	return &result, nil

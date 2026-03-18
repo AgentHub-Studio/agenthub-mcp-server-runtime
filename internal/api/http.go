@@ -1,7 +1,6 @@
-// Pacote api implementa o servidor HTTP do MCP Server Runtime.
-// Suporta o transporte Streamable HTTP conforme spec MCP 2025-03-26:
-// um único endpoint POST /mcp que negocia a resposta via Accept header
-// (application/json para JSON síncrono, text/event-stream para SSE).
+// Package api implements the HTTP server for the MCP Server Runtime.
+// Supports the Streamable HTTP transport per MCP spec 2025-03-26 and the
+// OAuth 2.1 authorization flow per RFC 9728 (Protected Resource Metadata).
 package api
 
 import (
@@ -15,9 +14,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/oauth"
+	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/tenant"
 )
 
 // MessageProcessor defines the interface for processing a JSON-RPC request
@@ -26,27 +27,51 @@ type MessageProcessor interface {
 	HandleHTTPRequest(ctx context.Context, req *mcp.JSONRPCRequest) *mcp.JSONRPCResponse
 }
 
+// protectedResourceMetadata is the RFC 9728 Protected Resource Metadata document.
+type protectedResourceMetadata struct {
+	Resource             string   `json:"resource"`
+	AuthorizationServers []string `json:"authorization_servers"`
+	ScopesSupported      []string `json:"scopes_supported"`
+	BearerMethodsSupported []string `json:"bearer_methods_supported"`
+}
+
 // HTTPServer manages the HTTP server of the MCP Server Runtime.
 type HTTPServer struct {
-	port      int
-	processor MessageProcessor
-	validator *oauth.Validator
-	router    *gin.Engine
-	server    *http.Server
+	port           int
+	processor      MessageProcessor
+	validator      *oauth.Validator
+	serverURL      string   // canonical public URL of this MCP server (audience)
+	authServerURL  string   // authorization server base URL (for PRM document)
+	requiredScopes []string // scopes every request must carry
+	router         *gin.Engine
+	server         *http.Server
 }
 
 // NewHTTPServer creates a new HTTP server for the MCP Server Runtime.
-// validator may be nil; when provided and enabled, JWT validation is applied to /mcp.
-func NewHTTPServer(port int, processor MessageProcessor, validator *oauth.Validator) *HTTPServer {
+//   - validator: when enabled performs JWT signature validation.
+//   - serverURL: canonical public URL used as the expected audience and in the PRM document.
+//   - authServerURL: Keycloak/OAuth base URL listed in the PRM document.
+//   - requiredScopes: scopes that every authenticated request must carry.
+func NewHTTPServer(
+	port int,
+	processor MessageProcessor,
+	validator *oauth.Validator,
+	serverURL string,
+	authServerURL string,
+	requiredScopes []string,
+) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 
 	s := &HTTPServer{
-		port:      port,
-		processor: processor,
-		validator: validator,
-		router:    router,
+		port:           port,
+		processor:      processor,
+		validator:      validator,
+		serverURL:      strings.TrimRight(serverURL, "/"),
+		authServerURL:  strings.TrimRight(authServerURL, "/"),
+		requiredScopes: requiredScopes,
+		router:         router,
 	}
 
 	s.registerRoutes()
@@ -55,13 +80,15 @@ func NewHTTPServer(port int, processor MessageProcessor, validator *oauth.Valida
 
 // registerRoutes configures all HTTP routes of the server.
 func (s *HTTPServer) registerRoutes() {
+	// Unauthenticated discovery endpoints
 	s.router.GET("/health", s.health)
+	s.router.GET("/.well-known/oauth-protected-resource", s.protectedResourceMetadataHandler)
 
-	// Streamable HTTP transport (MCP spec 2025-03-26):
-	// single POST /mcp endpoint replaces the previous POST /mcp + GET /mcp/sse pair.
+	// MCP endpoint — Streamable HTTP transport (MCP spec 2025-03-26)
 	mcpGroup := s.router.Group("/mcp")
+	mcpGroup.Use(s.tenantExtractorMiddleware())
 	if s.validator != nil && s.validator.Enabled() {
-		mcpGroup.Use(s.jwtMiddleware())
+		mcpGroup.Use(s.jwtValidationMiddleware())
 	}
 	mcpGroup.POST("", s.handleMCPMessage)
 }
@@ -72,8 +99,7 @@ func (s *HTTPServer) Start() error {
 		Addr:    fmt.Sprintf(":%d", s.port),
 		Handler: s.router,
 	}
-
-	log.Printf("HTTPServer: iniciando na porta %d (Streamable HTTP, MCP spec 2025-03-26)", s.port)
+	log.Printf("HTTPServer: starting on port %d", s.port)
 	return s.server.ListenAndServe()
 }
 
@@ -90,33 +116,160 @@ func (s *HTTPServer) Stop(ctx context.Context) error {
 func (s *HTTPServer) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
-		"servico": "agenthub-mcp-server-runtime",
-		"versao":  "1.0.0",
-		"agora":   time.Now().UTC().Format(time.RFC3339),
+		"service": "agenthub-mcp-server-runtime",
+		"version": "1.0.0",
+		"time":    time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
-// jwtMiddleware validates the Bearer token in the Authorization header.
-// Returns 401 when the token is absent or invalid.
-func (s *HTTPServer) jwtMiddleware() gin.HandlerFunc {
+// protectedResourceMetadataHandler serves the RFC 9728 Protected Resource Metadata document.
+// GET /.well-known/oauth-protected-resource
+func (s *HTTPServer) protectedResourceMetadataHandler(c *gin.Context) {
+	resource := s.serverURL
+	if resource == "" {
+		// Fall back to the request's own origin
+		scheme := "http"
+		if c.Request.TLS != nil {
+			scheme = "https"
+		}
+		resource = fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	}
+
+	doc := protectedResourceMetadata{
+		Resource:             resource,
+		BearerMethodsSupported: []string{"header"},
+	}
+
+	if s.authServerURL != "" {
+		doc.AuthorizationServers = []string{s.authServerURL}
+	}
+
+	if len(s.requiredScopes) > 0 {
+		doc.ScopesSupported = s.requiredScopes
+	} else {
+		doc.ScopesSupported = []string{"mcp:tools", "mcp:resources"}
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, doc)
+}
+
+// wwwAuthenticate builds the WWW-Authenticate header value for a 401 response.
+// Points the client to the PRM document for authorization discovery.
+func (s *HTTPServer) wwwAuthenticate(c *gin.Context) string {
+	serverURL := s.serverURL
+	if serverURL == "" {
+		scheme := "http"
+		if c.Request.TLS != nil {
+			scheme = "https"
+		}
+		serverURL = fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	}
+	prmURL := strings.TrimRight(serverURL, "/") + "/.well-known/oauth-protected-resource"
+	return fmt.Sprintf(`Bearer realm="mcp", resource_metadata="%s"`, prmURL)
+}
+
+// tenantExtractorMiddleware decodes the Bearer token (without signature validation)
+// to extract the tenant ID from the "iss" claim and injects it into the context.
+func (s *HTTPServer) tenantExtractorMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var tenantID, token string
+
 		authHeader := c.GetHeader("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "token de autenticação ausente ou malformado"})
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+
+			parsed, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
+			if err == nil && parsed != nil {
+				if claims, ok := parsed.Claims.(jwt.MapClaims); ok {
+					if iss, _ := claims["iss"].(string); iss != "" {
+						tenantID = tenant.ExtractFromISS(iss)
+					}
+				}
+			}
+		}
+
+		ctx := tenant.WithTenant(c.Request.Context(), tenantID, token)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
+}
+
+// jwtValidationMiddleware validates the Bearer token signature, audience, and scopes.
+// Returns 401 with a proper WWW-Authenticate challenge when the token is absent or invalid.
+func (s *HTTPServer) jwtValidationMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := tenant.TokenFromContext(c.Request.Context())
+		if token == "" {
+			c.Header("WWW-Authenticate", s.wwwAuthenticate(c))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing Bearer token"})
 			c.Abort()
 			return
 		}
 
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-		if _, err := s.validator.Validate(tokenStr); err != nil {
-			log.Printf("HTTPServer: token JWT inválido: %v", err)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": fmt.Sprintf("token inválido: %v", err)})
+		claims, err := s.validator.Validate(token)
+		if err != nil {
+			log.Printf("HTTPServer: invalid JWT: %v", err)
+			c.Header("WWW-Authenticate", s.wwwAuthenticate(c))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": fmt.Sprintf("invalid token: %v", err)})
 			c.Abort()
 			return
+		}
+
+		// Audience validation — token must be issued for this server.
+		if s.serverURL != "" {
+			if err := validateAudience(claims.Audience, s.serverURL); err != nil {
+				log.Printf("HTTPServer: audience validation failed: %v", err)
+				c.Header("WWW-Authenticate", s.wwwAuthenticate(c))
+				c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+				c.Abort()
+				return
+			}
+		}
+
+		// Scope validation — token must carry all required scopes.
+		if len(s.requiredScopes) > 0 {
+			if err := validateScopes(claims.Scopes, s.requiredScopes); err != nil {
+				log.Printf("HTTPServer: scope validation failed: %v", err)
+				c.Header("WWW-Authenticate", s.wwwAuthenticate(c))
+				c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+				c.Abort()
+				return
+			}
 		}
 
 		c.Next()
 	}
+}
+
+// validateAudience checks that at least one of the token audiences matches the server URL.
+// Trailing slashes are normalised before comparison.
+func validateAudience(audiences []string, serverURL string) error {
+	normalised := strings.TrimRight(serverURL, "/")
+	for _, aud := range audiences {
+		if strings.TrimRight(aud, "/") == normalised {
+			return nil
+		}
+	}
+	return fmt.Errorf("token audience %v does not include expected resource %q", audiences, serverURL)
+}
+
+// validateScopes checks that all required scopes are present in the token.
+func validateScopes(tokenScopes, required []string) error {
+	scopeSet := make(map[string]struct{}, len(tokenScopes))
+	for _, s := range tokenScopes {
+		scopeSet[s] = struct{}{}
+	}
+	var missing []string
+	for _, s := range required {
+		if _, ok := scopeSet[s]; !ok {
+			missing = append(missing, s)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required scopes: %v", missing)
+	}
+	return nil
 }
 
 // handleMCPMessage receives a JSON-RPC request via HTTP (Streamable HTTP transport).
@@ -128,19 +281,18 @@ func (s *HTTPServer) jwtMiddleware() gin.HandlerFunc {
 func (s *HTTPServer) handleMCPMessage(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, mcp.NewJSONRPCError(nil, mcp.ErrCodeParse, "erro ao ler corpo da requisição"))
+		c.JSON(http.StatusBadRequest, mcp.NewJSONRPCError(nil, mcp.ErrCodeParse, "error reading request body"))
 		return
 	}
 
 	var req mcp.JSONRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		c.JSON(http.StatusBadRequest, mcp.NewJSONRPCError(nil, mcp.ErrCodeParse, "JSON inválido na requisição"))
+		c.JSON(http.StatusBadRequest, mcp.NewJSONRPCError(nil, mcp.ErrCodeParse, "invalid JSON in request"))
 		return
 	}
 
 	response := s.processor.HandleHTTPRequest(c.Request.Context(), &req)
 	if response == nil {
-		// Notification — no response body
 		c.Status(http.StatusNoContent)
 		return
 	}
@@ -154,11 +306,11 @@ func (s *HTTPServer) handleMCPMessage(c *gin.Context) {
 }
 
 // writeSSEResponse writes a single JSON-RPC response as an SSE event.
-// Format: "data: <json>\n\n" per spec MCP 2025-03-26.
+// Format: "data: <json>\n\n" per MCP spec 2025-03-26.
 func (s *HTTPServer) writeSSEResponse(c *gin.Context, response *mcp.JSONRPCResponse) {
 	responseJSON, err := json.Marshal(response)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, mcp.NewJSONRPCError(nil, mcp.ErrCodeInternal, "erro ao serializar resposta"))
+		c.JSON(http.StatusInternalServerError, mcp.NewJSONRPCError(nil, mcp.ErrCodeInternal, "error serializing response"))
 		return
 	}
 

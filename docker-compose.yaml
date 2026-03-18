@@ -1,14 +1,22 @@
 services:
   agenthub-mcp-server-runtime:
     build: .
+    pull_policy: build
     container_name: agenthub-mcp-server-runtime
     restart: unless-stopped
     ports:
-      - "8086:8080"
+      - "8091:8091"
     environment:
-      HTTP_PORT: 8080
+      HTTP_PORT: "8091"
       STDIO_MODE: "false"
-      AGENTHUB_BACKEND_URL: http://agenthub.backend.internal:8090
+      AGENTHUB_BACKEND_URL: http://agenthub.backend.internal:8081
+      AGENTHUB_SKILL_RUNTIME_URL: http://agenthub.skill-runtime.internal:8083
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-https://mcp.cezar.dev}
+      OAUTH_AUTH_SERVER_URL: ${OAUTH_AUTH_SERVER_URL:-https://keycloak.cezar.dev}
+      OAUTH_JWKS_URL: ${OAUTH_JWKS_URL:-}
+      OAUTH_ISSUER_PREFIX: ${OAUTH_ISSUER_PREFIX:-}
+      OAUTH_REQUIRED_SCOPES: ${OAUTH_REQUIRED_SCOPES:-}
+      AGENTHUB_API_TOKEN: ${AGENTHUB_API_TOKEN:-}
     networks:
       agenthub-shared-net:
         aliases:

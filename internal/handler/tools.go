@@ -1,6 +1,6 @@
-// Pacote handler implementa os handlers MCP para ferramentas, recursos e prompts.
-// Este arquivo contém o handler de ferramentas (tools), que expõe as skills
-// ativas do AgentHub como MCP Tools.
+// Package handler implements the MCP handlers for tools, resources, and prompts.
+// This file contains the tools handler, which exposes the tenant's active skills
+// as MCP Tools. Tenant identity is read from the request context per call.
 package handler
 
 import (
@@ -11,6 +11,7 @@ import (
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/backend"
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
 	skillruntime "github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/skill_runtime"
+	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/tenant"
 )
 
 // BackendClientIface defines the backend operations used by the tools handler.
@@ -28,19 +29,16 @@ type SkillRuntimeClientIface interface {
 type ToolsHandlerImpl struct {
 	backendClient      BackendClientIface
 	skillRuntimeClient SkillRuntimeClientIface
-	tenantID           string
 }
 
 // NewToolsHandler creates a new MCP tools handler.
 func NewToolsHandler(
 	backendClient BackendClientIface,
 	skillRuntimeClient SkillRuntimeClientIface,
-	tenantID string,
 ) *ToolsHandlerImpl {
 	return &ToolsHandlerImpl{
 		backendClient:      backendClient,
 		skillRuntimeClient: skillRuntimeClient,
-		tenantID:           tenantID,
 	}
 }
 
@@ -49,13 +47,12 @@ func NewToolsHandler(
 func (h *ToolsHandlerImpl) ListTools(ctx context.Context) ([]mcp.Tool, error) {
 	skills, err := h.backendClient.ListActiveSkills(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao buscar skills do backend: %w", err)
+		return nil, fmt.Errorf("error fetching skills from backend: %w", err)
 	}
 
 	tools := make([]mcp.Tool, 0, len(skills))
 	for _, skill := range skills {
-		tool := skillToTool(skill)
-		tools = append(tools, tool)
+		tools = append(tools, skillToTool(skill))
 	}
 
 	return tools, nil
@@ -69,24 +66,23 @@ func (h *ToolsHandlerImpl) CallTool(
 	arguments map[string]interface{},
 ) (*mcp.CallToolResult, error) {
 	if name == "" {
-		return nil, fmt.Errorf("nome da ferramenta é obrigatório")
+		return nil, fmt.Errorf("tool name is required")
 	}
 
 	req := skillruntime.InvokeSkillRequest{
-		TenantID:  h.tenantID,
+		TenantID:  tenant.IDFromContext(ctx),
 		SkillSlug: name,
 		Input:     arguments,
 	}
 
 	result, err := h.skillRuntimeClient.InvokeSkill(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao invocar skill '%s': %w", name, err)
+		return nil, fmt.Errorf("error invoking skill '%s': %w", name, err)
 	}
 
-	// Serialize the result as JSON for the text content
 	resultJSON, err := json.Marshal(result.Result)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao serializar resultado da skill: %w", err)
+		return nil, fmt.Errorf("error serializing skill result: %w", err)
 	}
 
 	return &mcp.CallToolResult{
@@ -100,7 +96,6 @@ func (h *ToolsHandlerImpl) CallTool(
 // skillToTool converts a SkillDTO from the backend to an MCP Tool.
 // The skill slug becomes the tool name for unique identification.
 func skillToTool(skill backend.SkillDTO) mcp.Tool {
-	// Default schema when the skill has none defined
 	inputSchema := skill.InputSchema
 	if inputSchema == nil {
 		inputSchema = map[string]interface{}{
