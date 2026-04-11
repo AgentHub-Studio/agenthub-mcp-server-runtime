@@ -58,7 +58,7 @@ func postMCP(t *testing.T, srv *httptest.Server, body interface{}, accept string
 
 func TestHTTPServer_DeveRetornarJSONParaAcceptApplicationJSON(t *testing.T) {
 	processor := &fakeProcessor{response: buildTestResponse(t, 1)}
-	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""))
+	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""), "", "", nil)
 
 	srv := httptest.NewServer(s.router)
 	defer srv.Close()
@@ -78,7 +78,7 @@ func TestHTTPServer_DeveRetornarJSONParaAcceptApplicationJSON(t *testing.T) {
 
 func TestHTTPServer_DeveRetornarSSEParaAcceptEventStream(t *testing.T) {
 	processor := &fakeProcessor{response: buildTestResponse(t, 2)}
-	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""))
+	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""), "", "", nil)
 
 	srv := httptest.NewServer(s.router)
 	defer srv.Close()
@@ -99,7 +99,7 @@ func TestHTTPServer_DeveRetornarSSEParaAcceptEventStream(t *testing.T) {
 func TestHTTPServer_DeveRetornar204ParaNotificacao(t *testing.T) {
 	// Processor returns nil for notifications
 	processor := &fakeProcessor{response: nil}
-	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""))
+	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""), "", "", nil)
 
 	srv := httptest.NewServer(s.router)
 	defer srv.Close()
@@ -117,7 +117,7 @@ func TestHTTPServer_DeveRetornar401SemTokenQuandoOAuthAtivo(t *testing.T) {
 	// Use a validator pointing to a non-existent JWKS — any request without a token should fail at middleware
 	processor := &fakeProcessor{response: buildTestResponse(t, 3)}
 	validator := oauth.NewValidator("http://jwks.test/certs", "https://issuer.test")
-	s := NewHTTPServer(0, processor, validator)
+	s := NewHTTPServer(0, processor, validator, "", "", nil)
 
 	srv := httptest.NewServer(s.router)
 	defer srv.Close()
@@ -141,7 +141,7 @@ func TestHTTPServer_DeveRetornar401SemTokenQuandoOAuthAtivo(t *testing.T) {
 }
 
 func TestHTTPServer_HealthDeveRetornar200(t *testing.T) {
-	s := NewHTTPServer(0, &fakeProcessor{}, oauth.NewValidator("", ""))
+	s := NewHTTPServer(0, &fakeProcessor{}, oauth.NewValidator("", ""), "", "", nil)
 	srv := httptest.NewServer(s.router)
 	defer srv.Close()
 
@@ -163,7 +163,7 @@ func TestHTTPServer_DeveRetornarVersaoProtocolo2025(t *testing.T) {
 	}
 	resp, _ := mcp.NewJSONRPCResponse(float64(1), initResult)
 	processor := &fakeProcessor{response: resp}
-	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""))
+	s := NewHTTPServer(0, processor, oauth.NewValidator("", ""), "", "", nil)
 
 	srv := httptest.NewServer(s.router)
 	defer srv.Close()

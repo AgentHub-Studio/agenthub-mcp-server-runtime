@@ -13,10 +13,12 @@ import (
 
 // fakeBackendClientResources simulates the backend client for resources tests.
 type fakeBackendClientResources struct {
-	kbs       []backend.KnowledgeBaseDTO
-	kb        *backend.KnowledgeBaseDTO
-	errList   error
-	errGet    error
+	kbs        []backend.KnowledgeBaseDTO
+	kb         *backend.KnowledgeBaseDTO
+	packages   []backend.PackageSearchDTO
+	errList    error
+	errGet     error
+	errSearch  error
 }
 
 func (f *fakeBackendClientResources) ListKnowledgeBases(ctx context.Context) ([]backend.KnowledgeBaseDTO, error) {
@@ -25,6 +27,10 @@ func (f *fakeBackendClientResources) ListKnowledgeBases(ctx context.Context) ([]
 
 func (f *fakeBackendClientResources) GetKnowledgeBase(ctx context.Context, kbID string) (*backend.KnowledgeBaseDTO, error) {
 	return f.kb, f.errGet
+}
+
+func (f *fakeBackendClientResources) SearchPackages(ctx context.Context, query string, pkgType string) ([]backend.PackageSearchDTO, error) {
+	return f.packages, f.errSearch
 }
 
 // ========== Testes ==========
@@ -53,11 +59,12 @@ func TestResourcesHandler_DeveListarKBsComoRecursos(t *testing.T) {
 		t.Fatalf("ListResources retornou erro inesperado: %v", err)
 	}
 
-	if len(resources) != 2 {
-		t.Fatalf("esperava 2 recursos, obteve %d", len(resources))
+	// 2 KBs + 1 registry search resource template
+	if len(resources) != 3 {
+		t.Fatalf("esperava 3 recursos (2 KBs + registry search), obteve %d", len(resources))
 	}
 
-	// Verify URI format
+	// Verify KB URI format
 	expectedURI := "agenthub://kb/123e4567-e89b-12d3-a456-426614174000"
 	if resources[0].URI != expectedURI {
 		t.Errorf("esperava URI '%s', obteve '%s'", expectedURI, resources[0].URI)
@@ -69,6 +76,12 @@ func TestResourcesHandler_DeveListarKBsComoRecursos(t *testing.T) {
 
 	if resources[0].MIMEType != "application/json" {
 		t.Errorf("esperava MIMEType 'application/json', obteve '%s'", resources[0].MIMEType)
+	}
+
+	// Verify registry search resource is last
+	lastResource := resources[len(resources)-1]
+	if !strings.Contains(lastResource.URI, "agenthub://registry/search/") {
+		t.Errorf("último recurso deveria ser o registry search, obteve URI '%s'", lastResource.URI)
 	}
 }
 
@@ -142,5 +155,42 @@ func TestResourcesHandler_DeveRetornarErroQuandoKBNaoEncontrada(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("esperava erro quando knowledge base não é encontrada")
+	}
+}
+
+func TestResourcesHandler_DeveBuscarPacotesNoRegistry(t *testing.T) {
+	packages := []backend.PackageSearchDTO{
+		{ID: "pkg-1", Name: "Document Search Agent", Slug: "document-search-agent", Type: "AGENT"},
+		{ID: "pkg-2", Name: "SQL Query Skill", Slug: "sql-query-skill", Type: "SKILL"},
+	}
+
+	handler := NewResourcesHandler(&fakeBackendClientResources{packages: packages})
+
+	content, err := handler.ReadResource(context.Background(), "agenthub://registry/search/document")
+
+	if err != nil {
+		t.Fatalf("ReadResource retornou erro inesperado: %v", err)
+	}
+
+	if content.MIMEType != "application/json" {
+		t.Errorf("MIMEType incorreto: %s", content.MIMEType)
+	}
+
+	if !strings.Contains(content.Text, "document-search-agent") {
+		t.Errorf("resultado deveria conter 'document-search-agent', obteve: %s", content.Text)
+	}
+
+	if !strings.Contains(content.Text, `"count":2`) {
+		t.Errorf("resultado deveria indicar 2 pacotes encontrados, obteve: %s", content.Text)
+	}
+}
+
+func TestResourcesHandler_DeveRetornarErroParaQueryVazia(t *testing.T) {
+	handler := NewResourcesHandler(&fakeBackendClientResources{})
+
+	_, err := handler.ReadResource(context.Background(), "agenthub://registry/search/")
+
+	if err == nil {
+		t.Fatal("esperava erro para URI de busca com query vazia")
 	}
 }

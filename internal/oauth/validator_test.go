@@ -85,8 +85,8 @@ func TestValidator_DeveAceitarTokenValido(t *testing.T) {
 	if err != nil {
 		t.Fatalf("esperava token válido, obteve erro: %v", err)
 	}
-	if claims["sub"] != "test-subject" {
-		t.Errorf("claim 'sub' incorreto: %v", claims["sub"])
+	if claims.Raw["sub"] != "test-subject" {
+		t.Errorf("claim 'sub' incorreto: %v", claims.Raw["sub"])
 	}
 }
 
@@ -132,8 +132,8 @@ func TestValidator_DevePassarSemValidacaoQuandoDesabilitado(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validador desabilitado não deveria retornar erro: %v", err)
 	}
-	if len(claims) != 0 {
-		t.Errorf("claims deveriam estar vazios no modo desabilitado")
+	if claims.TenantID != "" || len(claims.Scopes) != 0 || len(claims.Audience) != 0 {
+		t.Errorf("claims deveriam estar vazios no modo desabilitado, obteve: %+v", claims)
 	}
 }
 

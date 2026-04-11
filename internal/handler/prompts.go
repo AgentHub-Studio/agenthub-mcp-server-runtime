@@ -1,6 +1,7 @@
-// Este arquivo contém o handler de prompts, que expõe prompts curados para
-// operações comuns do AgentHub como MCP Prompts.
-// Nesta versão inicial, os prompts são definidos estaticamente no código.
+// Package handler contains MCP protocol handlers for the AgentHub MCP Server Runtime.
+// This file implements the MCP Prompts handler, which exposes curated prompts for
+// common AgentHub operations. Prompts are loaded dynamically from the backend API
+// (prompt_template table) and augmented with built-in static prompts as fallback.
 package handler
 
 import (
@@ -8,11 +9,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/backend"
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/mcp"
 )
 
-// promptCatalog holds the curated prompts available on the MCP server.
-var promptCatalog = []mcp.Prompt{
+// BackendClientPromptsIface defines the backend operations used by the prompts handler.
+type BackendClientPromptsIface interface {
+	ListPromptTemplates(ctx context.Context) ([]backend.PromptTemplateDTO, error)
+}
+
+// staticPromptCatalog provides built-in prompts used as fallback when the backend
+// is unavailable or returns no templates.
+var staticPromptCatalog = []mcp.Prompt{
 	{
 		Name:        "pesquisar-conhecimento",
 		Description: "Realiza uma busca semântica na base de conhecimento do AgentHub e retorna documentos relevantes.",
@@ -53,26 +61,90 @@ var promptCatalog = []mcp.Prompt{
 }
 
 // PromptsHandlerImpl implements the PromptsHandler interface of the MCPServer.
-// Provides curated prompts for common AgentHub operations.
-type PromptsHandlerImpl struct{}
-
-// NewPromptsHandler creates a new MCP prompts handler.
-func NewPromptsHandler() *PromptsHandlerImpl {
-	return &PromptsHandlerImpl{}
+// Loads prompts dynamically from the backend API; falls back to static catalog
+// on error so the MCP server remains functional during backend outages.
+type PromptsHandlerImpl struct {
+	backendClient BackendClientPromptsIface
 }
 
-// ListPrompts returns the list of curated prompts available on the server.
+// NewPromptsHandler creates a new MCP prompts handler.
+// When backendClient is nil, only static prompts are served.
+func NewPromptsHandler(backendClient BackendClientPromptsIface) *PromptsHandlerImpl {
+	return &PromptsHandlerImpl{backendClient: backendClient}
+}
+
+// ListPrompts returns the combined list of dynamic (backend) and static prompts.
+// Dynamic prompts from the backend take precedence; static prompts fill in any gaps.
 func (h *PromptsHandlerImpl) ListPrompts(ctx context.Context) ([]mcp.Prompt, error) {
-	return promptCatalog, nil
+	dynamic := h.loadDynamic(ctx)
+	if len(dynamic) > 0 {
+		// Merge: start with dynamic, append static prompts not already present.
+		dynamicSlugs := make(map[string]struct{}, len(dynamic))
+		for _, p := range dynamic {
+			dynamicSlugs[p.Name] = struct{}{}
+		}
+		combined := append([]mcp.Prompt(nil), dynamic...)
+		for _, p := range staticPromptCatalog {
+			if _, exists := dynamicSlugs[p.Name]; !exists {
+				combined = append(combined, p)
+			}
+		}
+		return combined, nil
+	}
+	// Fallback: return static catalog when backend is unavailable.
+	return staticPromptCatalog, nil
+}
+
+// loadDynamic fetches prompt templates from the backend and converts them to
+// mcp.Prompt. Returns an empty slice (not an error) on failure so callers can
+// gracefully fall back to the static catalog.
+func (h *PromptsHandlerImpl) loadDynamic(ctx context.Context) []mcp.Prompt {
+	if h.backendClient == nil {
+		return nil
+	}
+	templates, err := h.backendClient.ListPromptTemplates(ctx)
+	if err != nil {
+		// Non-fatal — backend may be temporarily unavailable.
+		return nil
+	}
+	prompts := make([]mcp.Prompt, 0, len(templates))
+	for _, t := range templates {
+		prompts = append(prompts, mcp.Prompt{
+			Name:        t.Slug,
+			Description: t.Description,
+			// Dynamic prompts expose a single required "context" argument that
+			// passes extra variables into the template content.
+			Arguments: []mcp.PromptArgument{
+				{
+					Name:        "context",
+					Description: "Optional extra context to inject into the prompt",
+					Required:    false,
+				},
+			},
+		})
+	}
+	return prompts
 }
 
 // GetPrompt returns a prompt rendered with the provided arguments.
-// Each prompt has a message template that is filled with the arguments.
 func (h *PromptsHandlerImpl) GetPrompt(
 	ctx context.Context,
 	name string,
 	arguments map[string]string,
 ) (*mcp.GetPromptResult, error) {
+	// Try to find the prompt in dynamic templates first.
+	if h.backendClient != nil {
+		templates, err := h.backendClient.ListPromptTemplates(ctx)
+		if err == nil {
+			for _, t := range templates {
+				if t.Slug == name {
+					return h.renderDynamic(t, arguments), nil
+				}
+			}
+		}
+	}
+
+	// Fall back to static prompts.
 	switch name {
 	case "pesquisar-conhecimento":
 		return h.renderSearchKnowledge(arguments)
@@ -80,6 +152,27 @@ func (h *PromptsHandlerImpl) GetPrompt(
 		return h.renderExecuteSkill(arguments)
 	default:
 		return nil, fmt.Errorf("prompt não encontrado: '%s'", name)
+	}
+}
+
+// renderDynamic renders a dynamic prompt template with the provided arguments.
+func (h *PromptsHandlerImpl) renderDynamic(t backend.PromptTemplateDTO, args map[string]string) *mcp.GetPromptResult {
+	content := t.Content
+	// Simple variable substitution: {{key}} → args[key]
+	for k, v := range args {
+		content = strings.ReplaceAll(content, "{{"+k+"}}", v)
+	}
+	return &mcp.GetPromptResult{
+		Description: t.Description,
+		Messages: []mcp.PromptMessage{
+			{
+				Role: "user",
+				Content: mcp.ContentItem{
+					Type: "text",
+					Text: content,
+				},
+			},
+		},
 	}
 }
 

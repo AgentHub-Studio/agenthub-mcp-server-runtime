@@ -7,7 +7,7 @@ import (
 )
 
 func TestPromptsHandler_DeveListarDoisPromptsCurados(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	prompts, err := handler.ListPrompts(context.Background())
 
@@ -34,7 +34,7 @@ func TestPromptsHandler_DeveListarDoisPromptsCurados(t *testing.T) {
 }
 
 func TestPromptsHandler_DeveRenderizarPesquisarConhecimento(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	result, err := handler.GetPrompt(context.Background(), "pesquisar-conhecimento", map[string]string{
 		"consulta": "arquitetura do AgentHub",
@@ -58,7 +58,7 @@ func TestPromptsHandler_DeveRenderizarPesquisarConhecimento(t *testing.T) {
 }
 
 func TestPromptsHandler_DeveRenderizarPesquisarConhecimentoComKBID(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	result, err := handler.GetPrompt(context.Background(), "pesquisar-conhecimento", map[string]string{
 		"consulta": "pipeline de documentos",
@@ -76,7 +76,7 @@ func TestPromptsHandler_DeveRenderizarPesquisarConhecimentoComKBID(t *testing.T)
 }
 
 func TestPromptsHandler_DeveRenderizarExecutarSkill(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	result, err := handler.GetPrompt(context.Background(), "executar-skill", map[string]string{
 		"skill_slug": "document-search",
@@ -98,7 +98,7 @@ func TestPromptsHandler_DeveRenderizarExecutarSkill(t *testing.T) {
 }
 
 func TestPromptsHandler_DeveRetornarErroParaPromptDesconhecido(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	_, err := handler.GetPrompt(context.Background(), "prompt-inexistente", nil)
 
@@ -108,7 +108,7 @@ func TestPromptsHandler_DeveRetornarErroParaPromptDesconhecido(t *testing.T) {
 }
 
 func TestPromptsHandler_DeveRetornarErroSemArgumentoObrigatorio_PesquisarConhecimento(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	// Argument 'consulta' is required
 	_, err := handler.GetPrompt(context.Background(), "pesquisar-conhecimento", map[string]string{})
@@ -119,7 +119,7 @@ func TestPromptsHandler_DeveRetornarErroSemArgumentoObrigatorio_PesquisarConheci
 }
 
 func TestPromptsHandler_DeveRetornarErroSemArgumentoObrigatorio_ExecutarSkill(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	// Both 'skill_slug' and 'input_json' are required
 	_, err := handler.GetPrompt(context.Background(), "executar-skill", map[string]string{
@@ -133,7 +133,7 @@ func TestPromptsHandler_DeveRetornarErroSemArgumentoObrigatorio_ExecutarSkill(t 
 }
 
 func TestPromptsHandler_DeveConterArgumentosNaListagem(t *testing.T) {
-	handler := NewPromptsHandler()
+	handler := NewPromptsHandler(nil)
 
 	prompts, _ := handler.ListPrompts(context.Background())
 

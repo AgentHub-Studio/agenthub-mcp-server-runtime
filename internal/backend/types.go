@@ -18,3 +18,22 @@ type KnowledgeBaseDTO struct {
 	Description string `json:"description"`
 	Status      string `json:"status"`
 }
+
+// PromptTemplateDTO represents a prompt template returned by the agenthub-backend.
+type PromptTemplateDTO struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+	Category    string `json:"category"`
+}
+
+// PackageSearchDTO represents a registry package from the search endpoint.
+type PackageSearchDTO struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+}

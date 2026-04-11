@@ -142,7 +142,7 @@ func main() {
 
 	toolsHandler := handler.NewToolsHandler(backendClient, skillRuntimeClient)
 	resourcesHandler := handler.NewResourcesHandler(backendClient)
-	promptsHandler := handler.NewPromptsHandler()
+	promptsHandler := handler.NewPromptsHandler(backendClient)
 
 	server := mcp.NewMCPServer(toolsHandler, resourcesHandler, promptsHandler)
 

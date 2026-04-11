@@ -59,7 +59,6 @@ func TestToolsHandler_DeveListarSkillsComoFerramentas(t *testing.T) {
 	handler := NewToolsHandler(
 		&fakeBackendClientTools{skills: skills},
 		&fakeSkillRuntimeClient{},
-		"tenant-123",
 	)
 
 	tools, err := handler.ListTools(context.Background())
@@ -93,7 +92,6 @@ func TestToolsHandler_DeveUsarSchemaParaoCasoDeSkillSemSchema(t *testing.T) {
 	handler := NewToolsHandler(
 		&fakeBackendClientTools{skills: skills},
 		&fakeSkillRuntimeClient{},
-		"tenant-123",
 	)
 
 	tools, err := handler.ListTools(context.Background())
@@ -113,7 +111,6 @@ func TestToolsHandler_DeveRetornarErroDoBackend(t *testing.T) {
 	handler := NewToolsHandler(
 		&fakeBackendClientTools{err: backendErr},
 		&fakeSkillRuntimeClient{},
-		"tenant-123",
 	)
 
 	_, err := handler.ListTools(context.Background())
@@ -133,7 +130,6 @@ func TestToolsHandler_DeveChamarSkillRuntimeAoChamarFerramenta(t *testing.T) {
 	handler := NewToolsHandler(
 		&fakeBackendClientTools{},
 		&fakeSkillRuntimeClient{result: expectedResult},
-		"tenant-123",
 	)
 
 	result, err := handler.CallTool(context.Background(), "document-search", map[string]interface{}{
@@ -161,7 +157,6 @@ func TestToolsHandler_DeveRetornarErroParaNomeVazio(t *testing.T) {
 	handler := NewToolsHandler(
 		&fakeBackendClientTools{},
 		&fakeSkillRuntimeClient{},
-		"tenant-123",
 	)
 
 	_, err := handler.CallTool(context.Background(), "", nil)
@@ -177,7 +172,6 @@ func TestToolsHandler_DevePropagareErroDoSkillRuntime(t *testing.T) {
 	handler := NewToolsHandler(
 		&fakeBackendClientTools{},
 		&fakeSkillRuntimeClient{err: runtimeErr},
-		"tenant-123",
 	)
 
 	_, err := handler.CallTool(context.Background(), "skill-inexistente", nil)

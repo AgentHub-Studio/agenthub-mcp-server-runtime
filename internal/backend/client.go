@@ -135,6 +135,71 @@ func (c *BackendClient) GetKnowledgeBase(ctx context.Context, kbID string) (*Kno
 	return &kb, nil
 }
 
+// ListPromptTemplates returns all global prompt templates from the backend.
+// Calls GET /api/prompt-templates on the backend.
+func (c *BackendClient) ListPromptTemplates(ctx context.Context) ([]PromptTemplateDTO, error) {
+	url := fmt.Sprintf("%s/api/prompt-templates?size=100", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+	c.addHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error calling backend: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Content []PromptTemplateDTO `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("error decoding prompt templates: %w", err)
+	}
+	return result.Content, nil
+}
+
+// SearchPackages performs a text search across PUBLIC registry packages.
+// Calls GET /api/packages/search?q=...&type=... on the backend.
+func (c *BackendClient) SearchPackages(ctx context.Context, query string, pkgType string) ([]PackageSearchDTO, error) {
+	u := fmt.Sprintf("%s/api/packages/search?q=%s&size=20", c.baseURL, query)
+	if pkgType != "" {
+		u += "&type=" + pkgType
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+	c.addHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error calling backend: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Content []PackageSearchDTO `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("error decoding search results: %w", err)
+	}
+	return result.Content, nil
+}
+
 // addHeaders sets authentication and tenant headers on the outgoing request.
 // Tenant ID and Bearer token are read from the request context; staticToken is
 // used as a fallback when the context carries no token.
