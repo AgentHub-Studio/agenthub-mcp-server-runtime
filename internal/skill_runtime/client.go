@@ -1,5 +1,5 @@
 // Package skill_runtime implements the HTTP client for the agenthub-skill-runtime.
-// Responsible for invoking AgentHub skills via POST /api/v1/skills/invoke.
+// Invokes AgentHub skills via POST /api/skills/{slug}/execute.
 package skill_runtime
 
 import (
@@ -32,10 +32,25 @@ type SkillResult struct {
 	LatencyMs   int64                  `json:"latencyMs"`
 }
 
+// skillRuntimeBody mirrors the executeBody accepted by the agenthub-skill-runtime:
+// POST /api/skills/{slug}/execute expects {"input": {...}, "context": {...}}.
+type skillRuntimeBody struct {
+	Input   map[string]interface{} `json:"input"`
+	Context struct {
+		TenantID string `json:"tenantId"`
+	} `json:"context"`
+}
+
+// TokenFunc is a function that returns a valid Bearer token.
+// Used as a fallback when the request context carries no token.
+type TokenFunc func() (string, error)
+
 // SkillRuntimeClient performs skill invocations on the agenthub-skill-runtime.
 type SkillRuntimeClient struct {
-	baseURL string
-	http    *http.Client
+	baseURL         string
+	fallbackToken   TokenFunc // optional; used when context has no token
+	fallbackTenant  string    // optional default tenant ID when context has none
+	http            *http.Client
 }
 
 // NewSkillRuntimeClient creates a new HTTP client for the agenthub-skill-runtime.
@@ -48,22 +63,44 @@ func NewSkillRuntimeClient(baseURL string) *SkillRuntimeClient {
 	}
 }
 
+// WithFallbackToken sets a token provider function used when the request context
+// carries no Bearer token (e.g. when OAuth is disabled on the MCP server).
+func (c *SkillRuntimeClient) WithFallbackToken(fn TokenFunc) *SkillRuntimeClient {
+	c.fallbackToken = fn
+	return c
+}
+
+// WithFallbackTenant sets a default tenant ID used when the request context
+// carries none (e.g. when OAuth is disabled on the MCP server).
+func (c *SkillRuntimeClient) WithFallbackTenant(tenantID string) *SkillRuntimeClient {
+	c.fallbackTenant = tenantID
+	return c
+}
+
 // InvokeSkill invokes a skill by slug with the provided arguments.
-// Calls POST /api/v1/skills/invoke on the skill-runtime.
-// Tenant ID and Bearer token are read from the context.
+// Calls POST /api/skills/{skillSlug}/execute on the agenthub-skill-runtime.
+// The tenant is identified from the Bearer JWT in the request context.
 func (c *SkillRuntimeClient) InvokeSkill(ctx context.Context, req InvokeSkillRequest) (*SkillResult, error) {
-	url := fmt.Sprintf("%s/api/v1/skills/invoke", c.baseURL)
-
-	// Populate tenant ID from context when not set in the request
-	if req.TenantID == "" {
-		req.TenantID = tenant.IDFromContext(ctx)
+	// Resolve tenant: explicit > context > configured fallback.
+	tenantID := req.TenantID
+	if tenantID == "" {
+		tenantID = tenant.IDFromContext(ctx)
+	}
+	if tenantID == "" {
+		tenantID = c.fallbackTenant
 	}
 
-	if req.Timeout == 0 {
-		req.Timeout = 30000
+	url := fmt.Sprintf("%s/api/skills/%s/execute", c.baseURL, req.SkillSlug)
+
+	input := req.Input
+	if input == nil {
+		input = map[string]interface{}{}
 	}
 
-	body, err := json.Marshal(req)
+	payload := skillRuntimeBody{Input: input}
+	payload.Context.TenantID = tenantID
+
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("error serializing request: %w", err)
 	}
@@ -75,12 +112,16 @@ func (c *SkillRuntimeClient) InvokeSkill(ctx context.Context, req InvokeSkillReq
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	if id := tenant.IDFromContext(ctx); id != "" {
-		httpReq.Header.Set("X-Tenant-ID", id)
+	// Forward tenant and auth headers so the skill-runtime can resolve the schema.
+	if tenantID != "" {
+		httpReq.Header.Set("X-Tenant-ID", tenantID)
 	}
-
 	if tok := tenant.TokenFromContext(ctx); tok != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+tok)
+	} else if c.fallbackToken != nil {
+		if tok, err := c.fallbackToken(); err == nil && tok != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+tok)
+		}
 	}
 
 	resp, err := c.http.Do(httpReq)
@@ -98,10 +139,31 @@ func (c *SkillRuntimeClient) InvokeSkill(ctx context.Context, req InvokeSkillReq
 		return nil, fmt.Errorf("skill-runtime returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var result SkillResult
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("error decoding skill result: %w", err)
+	// The skill-runtime may return a raw JSON object. Wrap it in a SkillResult
+	// so callers always get a consistent struct regardless of what the skill returns.
+	var raw interface{}
+	if err := json.Unmarshal(respBody, &raw); err != nil {
+		return &SkillResult{
+			SkillSlug: req.SkillSlug,
+			Success:   true,
+			Result:    map[string]interface{}{"raw": string(respBody)},
+		}, nil
 	}
 
-	return &result, nil
+	// If the response looks like our SkillResult shape, unmarshal directly.
+	var result SkillResult
+	if err := json.Unmarshal(respBody, &result); err == nil && (result.SkillSlug != "" || result.ExecutionID != "") {
+		return &result, nil
+	}
+
+	// Otherwise, wrap the raw response.
+	rawMap, _ := raw.(map[string]interface{})
+	if rawMap == nil {
+		rawMap = map[string]interface{}{"output": raw}
+	}
+	return &SkillResult{
+		SkillSlug: req.SkillSlug,
+		Success:   true,
+		Result:    rawMap,
+	}, nil
 }

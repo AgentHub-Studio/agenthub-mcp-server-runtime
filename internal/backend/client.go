@@ -17,17 +17,17 @@ import (
 // BackendClient performs HTTP calls to the agenthub-backend to query
 // skills and knowledge bases for the tenant.
 type BackendClient struct {
-	baseURL     string
-	staticToken string // fallback Bearer token when context carries none (AGENTHUB_API_TOKEN)
-	http        *http.Client
+	baseURL       string
+	tokenProvider TokenProvider // fallback token provider when context carries no Bearer token
+	http          *http.Client
 }
 
 // NewBackendClient creates a new HTTP client for the agenthub-backend.
-// staticToken is optional; used only when the request context has no Bearer token.
-func NewBackendClient(baseURL, staticToken string) *BackendClient {
+// tokenProvider is optional; used only when the request context has no Bearer token.
+func NewBackendClient(baseURL string, tokenProvider TokenProvider) *BackendClient {
 	return &BackendClient{
-		baseURL:     baseURL,
-		staticToken: staticToken,
+		baseURL:       baseURL,
+		tokenProvider: tokenProvider,
 		http: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -201,8 +201,8 @@ func (c *BackendClient) SearchPackages(ctx context.Context, query string, pkgTyp
 }
 
 // addHeaders sets authentication and tenant headers on the outgoing request.
-// Tenant ID and Bearer token are read from the request context; staticToken is
-// used as a fallback when the context carries no token.
+// Tenant ID and Bearer token are read from the request context; the token
+// provider (static or Keycloak client credentials) is used as a fallback.
 func (c *BackendClient) addHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 
@@ -212,7 +212,9 @@ func (c *BackendClient) addHeaders(req *http.Request) {
 
 	if tok := tenant.TokenFromContext(req.Context()); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
-	} else if c.staticToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.staticToken)
+	} else if c.tokenProvider != nil {
+		if tok, err := c.tokenProvider.Token(); err == nil && tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
 	}
 }

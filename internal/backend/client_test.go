@@ -24,7 +24,7 @@ func TestBackendClient_DeveEnviarHeaderTenantID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "token-teste")
+	client := NewBackendClient(server.URL, NewStaticTokenProvider("token-teste"))
 
 	ctx := tenant.WithTenant(context.Background(), "tenant-abc-123", "token-teste")
 	_, err := client.ListActiveSkills(ctx)
@@ -48,7 +48,7 @@ func TestBackendClient_DeveEnviarHeaderAuthorization(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "meu-token-secreto")
+	client := NewBackendClient(server.URL, NewStaticTokenProvider("meu-token-secreto"))
 
 	_, err := client.ListActiveSkills(context.Background())
 
@@ -86,7 +86,7 @@ func TestBackendClient_DeveDeserializarListaDeSkills(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "")
+	client := NewBackendClient(server.URL, nil)
 
 	skills, err := client.ListActiveSkills(context.Background())
 
@@ -109,7 +109,7 @@ func TestBackendClient_DeveRetornarErroEmStatus4xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "token-invalido")
+	client := NewBackendClient(server.URL, NewStaticTokenProvider("token-invalido"))
 
 	_, err := client.ListActiveSkills(context.Background())
 
@@ -124,7 +124,7 @@ func TestBackendClient_DeveRetornarErroEmStatus5xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "")
+	client := NewBackendClient(server.URL, nil)
 
 	_, err := client.ListActiveSkills(context.Background())
 
@@ -151,7 +151,7 @@ func TestBackendClient_DeveListarKnowledgeBases(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "")
+	client := NewBackendClient(server.URL, nil)
 
 	kbs, err := client.ListKnowledgeBases(context.Background())
 
@@ -182,7 +182,7 @@ func TestBackendClient_DeveLerKnowledgeBaseEspecifica(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "")
+	client := NewBackendClient(server.URL, nil)
 
 	kb, err := client.GetKnowledgeBase(context.Background(), "kb-uuid-123")
 
@@ -205,7 +205,7 @@ func TestBackendClient_DeveRetornarErroParaKBNaoEncontrada(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewBackendClient(server.URL, "")
+	client := NewBackendClient(server.URL, nil)
 
 	_, err := client.GetKnowledgeBase(context.Background(), "kb-inexistente")
 

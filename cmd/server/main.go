@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -137,8 +138,33 @@ func main() {
 		log.Printf("Protected Resource Metadata: http://localhost:%d/.well-known/oauth-protected-resource", config.HTTPPort)
 	}
 
-	backendClient := backend.NewBackendClient(config.BackendURL, config.APIToken)
+	// Build the token provider for backend calls.
+	// Priority: Keycloak client credentials > static token > nil (anonymous).
+	var tokenProvider backend.TokenProvider
+	kcBase := getEnv("AGENTHUB_KEYCLOAK_BASE_URL", "")
+	kcTenant := getEnv("AGENTHUB_TENANT_ID", "")
+	kcClientID := getEnv("AGENTHUB_CLIENT_ID", "")
+	kcClientSecret := getEnv("AGENTHUB_CLIENT_SECRET", "")
+	if kcBase != "" && kcTenant != "" && kcClientID != "" && kcClientSecret != "" {
+		tokenURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", kcBase, kcTenant)
+		log.Printf("Backend auth: Keycloak client credentials (clientId=%s tokenURL=%s)", kcClientID, tokenURL)
+		tokenProvider = backend.NewKeycloakTokenProvider(tokenURL, kcClientID, kcClientSecret)
+	} else if config.APIToken != "" {
+		log.Println("Backend auth: static API token (AGENTHUB_API_TOKEN)")
+		tokenProvider = backend.NewStaticTokenProvider(config.APIToken)
+	} else {
+		log.Println("Backend auth: none (requests may be rejected by the backend)")
+	}
+
+	backendClient := backend.NewBackendClient(config.BackendURL, tokenProvider)
+
 	skillRuntimeClient := skillruntime.NewSkillRuntimeClient(config.SkillRuntimeURL)
+	if tokenProvider != nil {
+		skillRuntimeClient.WithFallbackToken(tokenProvider.Token)
+	}
+	if kcTenant != "" {
+		skillRuntimeClient.WithFallbackTenant(kcTenant)
+	}
 
 	toolsHandler := handler.NewToolsHandler(backendClient, skillRuntimeClient)
 	resourcesHandler := handler.NewResourcesHandler(backendClient)
