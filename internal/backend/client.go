@@ -67,6 +67,37 @@ func (c *BackendClient) ListActiveSkills(ctx context.Context) ([]SkillDTO, error
 	return result.Content, nil
 }
 
+// ListSkillTools returns the tools bound to a skill.
+// Calls GET /api/skills/{id}/tools on the backend.
+func (c *BackendClient) ListSkillTools(ctx context.Context, skillID string) ([]SkillToolDTO, error) {
+	url := fmt.Sprintf("%s/api/skills/%s/tools", c.baseURL, skillID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	c.addHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error calling backend: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result []SkillToolDTO
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("error decoding skill tools: %w", err)
+	}
+
+	return result, nil
+}
+
 // ListKnowledgeBases returns all knowledge bases for the tenant.
 // Calls GET /api/knowledge-bases on the backend.
 func (c *BackendClient) ListKnowledgeBases(ctx context.Context) ([]KnowledgeBaseDTO, error) {

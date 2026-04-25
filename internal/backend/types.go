@@ -11,6 +11,24 @@ type SkillDTO struct {
 	Status      string                 `json:"status"`
 }
 
+// ToolDTO represents a tool returned by the AgentHub backend.
+type ToolDTO struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Slug        string                 `json:"slug"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"inputSchema"`
+}
+
+// SkillToolDTO represents a skill-tool binding returned by the backend.
+type SkillToolDTO struct {
+	ID       string  `json:"id"`
+	SkillID  string  `json:"skillId"`
+	Tool     ToolDTO `json:"tool"`
+	Priority int     `json:"priority"`
+	IsActive bool    `json:"isActive"`
+}
+
 // KnowledgeBaseDTO represents a knowledge base returned by the agenthub-backend.
 type KnowledgeBaseDTO struct {
 	ID          string `json:"id"`

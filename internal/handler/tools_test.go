@@ -13,12 +13,24 @@ import (
 
 // fakeBackendClientTools simulates the backend client for tools tests.
 type fakeBackendClientTools struct {
-	skills []backend.SkillDTO
-	err    error
+	skills   []backend.SkillDTO
+	tools    map[string][]backend.SkillToolDTO
+	err      error
+	toolsErr error
 }
 
 func (f *fakeBackendClientTools) ListActiveSkills(ctx context.Context) ([]backend.SkillDTO, error) {
 	return f.skills, f.err
+}
+
+func (f *fakeBackendClientTools) ListSkillTools(ctx context.Context, skillID string) ([]backend.SkillToolDTO, error) {
+	if f.toolsErr != nil {
+		return nil, f.toolsErr
+	}
+	if f.tools == nil {
+		return nil, nil
+	}
+	return f.tools[skillID], nil
 }
 
 // fakeSkillRuntimeClient simulates the skill-runtime client for tests.
@@ -102,6 +114,48 @@ func TestToolsHandler_DeveUsarSchemaParaoCasoDeSkillSemSchema(t *testing.T) {
 
 	if tools[0].InputSchema == nil {
 		t.Error("InputSchema não deve ser nil mesmo quando skill não tem schema")
+	}
+}
+
+func TestToolsHandler_DeveUsarInputSchemaDaToolAtiva(t *testing.T) {
+	skills := []backend.SkillDTO{
+		{
+			ID:          "skill-1",
+			Slug:        "viacep_address_lookup",
+			Description: "Consulta endereço por CEP",
+		},
+	}
+	toolSchema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"cep": map[string]interface{}{"type": "string"},
+		},
+		"required": []interface{}{"cep"},
+	}
+
+	handler := NewToolsHandler(
+		&fakeBackendClientTools{
+			skills: skills,
+			tools: map[string][]backend.SkillToolDTO{
+				"skill-1": {
+					{IsActive: true, Tool: backend.ToolDTO{InputSchema: toolSchema}},
+				},
+			},
+		},
+		&fakeSkillRuntimeClient{},
+	)
+
+	tools, err := handler.ListTools(context.Background())
+
+	if err != nil {
+		t.Fatalf("ListTools retornou erro inesperado: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("esperava 1 ferramenta, obteve %d", len(tools))
+	}
+	properties := tools[0].InputSchema["properties"].(map[string]interface{})
+	if _, ok := properties["cep"]; !ok {
+		t.Fatalf("esperava schema com propriedade cep, obteve %#v", tools[0].InputSchema)
 	}
 }
 

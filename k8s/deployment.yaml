@@ -1,0 +1,73 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agenthub-mcp-server-runtime
+  namespace: agenthub
+  labels:
+    app: agenthub-mcp-server-runtime
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agenthub-mcp-server-runtime
+  template:
+    metadata:
+      labels:
+        app: agenthub-mcp-server-runtime
+    spec:
+      imagePullSecrets:
+        - name: registry-cezar-dev-secret
+      containers:
+        - name: agenthub-mcp-server-runtime
+          image: registry.cezar.dev/agenthub-mcp-server-runtime:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: STDIO_MODE
+              value: "false"
+            - name: HTTP_PORT
+              value: "8080"
+            - name: OAUTH_AUTH_SERVER_URL
+              value: https://keycloak.cezar.dev
+            - name: OAUTH_JWKS_URL
+              value: http://keycloak.agenthub.svc.cluster.local:8080/realms/{tenantId}/protocol/openid-connect/certs
+            - name: AGENTHUB_BACKEND_URL
+              value: http://agenthub-api.agenthub.svc.cluster.local:8081
+            - name: AGENTHUB_KEYCLOAK_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agenthub-config
+                  key: keycloak-url
+            - name: AGENTHUB_TENANT_ID
+              value: test
+            - name: AGENTHUB_CLIENT_ID
+              value: agenthub-mcp-client-runtime
+            - name: AGENTHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agenthub-secrets
+                  key: mcp-client-runtime-client-secret
+            - name: AGENTHUB_SKILL_RUNTIME_URL
+              value: http://agenthub-skill-runtime.agenthub.svc.cluster.local:8083
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agenthub-mcp-server-runtime
+  namespace: agenthub
+spec:
+  selector:
+    app: agenthub-mcp-server-runtime
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
