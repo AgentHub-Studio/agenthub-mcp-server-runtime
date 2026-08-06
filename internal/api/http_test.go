@@ -156,6 +156,18 @@ func TestHTTPServer_HealthDeveRetornar200(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_ConfiguresReadHeaderTimeout(t *testing.T) {
+	s := NewHTTPServer(8080, &fakeProcessor{}, oauth.NewValidator("", ""), "", "", nil)
+	srv := s.newHTTPServer()
+
+	if srv.ReadHeaderTimeout <= 0 {
+		t.Fatal("expected ReadHeaderTimeout to be configured")
+	}
+	if srv.ReadHeaderTimeout != httpReadHeaderTimeout {
+		t.Fatalf("expected ReadHeaderTimeout %s, got %s", httpReadHeaderTimeout, srv.ReadHeaderTimeout)
+	}
+}
+
 func TestHTTPServer_DeveRetornarVersaoProtocolo2025(t *testing.T) {
 	// Simulate an initialize response and confirm the protocol version in JSON output
 	initResult := mcp.InitializeResult{

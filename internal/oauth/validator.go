@@ -4,6 +4,7 @@
 package oauth
 
 import (
+	"context"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,10 @@ import (
 
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/tenant"
 )
+
+const jwksFetchTimeout = 5 * time.Second
+
+var jwksHTTPClient = &http.Client{Timeout: jwksFetchTimeout}
 
 // jwksKey represents a single key entry in a JWKS response.
 type jwksKey struct {
@@ -61,8 +67,8 @@ type Claims struct {
 // When the template has no placeholder it behaves as a single-tenant validator.
 // When the template is empty the validator operates in disabled (no-op) mode.
 type Validator struct {
-	jwksURLTemplate string // e.g. http://keycloak:8080/realms/{tenantId}/protocol/openid-connect/certs
-	issuerPrefix    string // when non-empty, the iss claim must start with this value
+	jwksURLTemplate string   // e.g. http://keycloak:8080/realms/{tenantId}/protocol/openid-connect/certs
+	issuerPrefix    string   // when non-empty, the iss claim must start with this value
 	cache           sync.Map // tenantID -> *tenantCache
 	cacheTTL        time.Duration
 }
@@ -147,7 +153,7 @@ func (v *Validator) buildJWKSURL(tenantID string) string {
 	if tenantID == "" {
 		return v.jwksURLTemplate
 	}
-	return strings.ReplaceAll(v.jwksURLTemplate, "{tenantId}", tenantID)
+	return strings.ReplaceAll(v.jwksURLTemplate, "{tenantId}", url.PathEscape(tenantID))
 }
 
 // getKey returns the RSA public key for the given tenant and key ID.
@@ -204,7 +210,20 @@ func lookupKey(keys map[string]*rsa.PublicKey, kid string) *rsa.PublicKey {
 
 // fetchJWKS downloads the JWKS from the given URL and updates the cache.
 func (v *Validator) fetchJWKS(tc *tenantCache, jwksURL string) error {
-	resp, err := http.Get(jwksURL) //nolint:noctx
+	validatedURL, err := validateJWKSURL(jwksURL)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), jwksFetchTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating JWKS request: %w", err)
+	}
+
+	resp, err := jwksHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP error fetching JWKS from %s: %w", jwksURL, err)
 	}
@@ -238,6 +257,33 @@ func (v *Validator) fetchJWKS(tc *tenantCache, jwksURL string) error {
 	tc.mu.Unlock()
 
 	return nil
+}
+
+func validateJWKSURL(raw string) (*url.URL, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, errors.New("JWKS URL is empty")
+	}
+	if strings.ContainsAny(raw, "\x00\r\n\t") {
+		return nil, errors.New("JWKS URL contains invalid control characters")
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid JWKS URL: %w", err)
+	}
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return nil, errors.New("JWKS URL must be absolute and include a host")
+	}
+	switch parsed.Scheme {
+	case "http", "https":
+	default:
+		return nil, fmt.Errorf("JWKS URL scheme %q is not allowed", parsed.Scheme)
+	}
+	if parsed.User != nil {
+		return nil, errors.New("JWKS URL must not contain user info")
+	}
+
+	return parsed, nil
 }
 
 // parseRSAPublicKey constructs an *rsa.PublicKey from base64url-encoded N and E values.

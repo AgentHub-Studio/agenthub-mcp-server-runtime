@@ -19,6 +19,7 @@ type fakeBackendClientResources struct {
 	errList    error
 	errGet     error
 	errSearch  error
+	searchQuery string
 }
 
 func (f *fakeBackendClientResources) ListKnowledgeBases(ctx context.Context) ([]backend.KnowledgeBaseDTO, error) {
@@ -30,6 +31,7 @@ func (f *fakeBackendClientResources) GetKnowledgeBase(ctx context.Context, kbID 
 }
 
 func (f *fakeBackendClientResources) SearchPackages(ctx context.Context, query string, pkgType string) ([]backend.PackageSearchDTO, error) {
+	f.searchQuery = query
 	return f.packages, f.errSearch
 }
 
@@ -80,7 +82,7 @@ func TestResourcesHandler_DeveListarKBsComoRecursos(t *testing.T) {
 
 	// Verify registry search resource is last
 	lastResource := resources[len(resources)-1]
-	if !strings.Contains(lastResource.URI, "agenthub://registry/search/") {
+	if lastResource.URI != "agenthub://registry/search?q={query}" {
 		t.Errorf("último recurso deveria ser o registry search, obteve URI '%s'", lastResource.URI)
 	}
 }
@@ -164,9 +166,10 @@ func TestResourcesHandler_DeveBuscarPacotesNoRegistry(t *testing.T) {
 		{ID: "pkg-2", Name: "SQL Query Skill", Slug: "sql-query-skill", Type: "SKILL"},
 	}
 
-	handler := NewResourcesHandler(&fakeBackendClientResources{packages: packages})
+	backendClient := &fakeBackendClientResources{packages: packages}
+	handler := NewResourcesHandler(backendClient)
 
-	content, err := handler.ReadResource(context.Background(), "agenthub://registry/search/document")
+	content, err := handler.ReadResource(context.Background(), "agenthub://registry/search?q=document%20search")
 
 	if err != nil {
 		t.Fatalf("ReadResource retornou erro inesperado: %v", err)
@@ -183,6 +186,10 @@ func TestResourcesHandler_DeveBuscarPacotesNoRegistry(t *testing.T) {
 	if !strings.Contains(content.Text, `"count":2`) {
 		t.Errorf("resultado deveria indicar 2 pacotes encontrados, obteve: %s", content.Text)
 	}
+
+	if backendClient.searchQuery != "document search" {
+		t.Errorf("esperava query decodificada, obteve %q", backendClient.searchQuery)
+	}
 }
 
 func TestResourcesHandler_DeveRetornarErroParaQueryVazia(t *testing.T) {
@@ -192,5 +199,19 @@ func TestResourcesHandler_DeveRetornarErroParaQueryVazia(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("esperava erro para URI de busca com query vazia")
+	}
+}
+
+func TestResourcesHandler_DeveManterBuscaLegadaDoRegistry(t *testing.T) {
+	backendClient := &fakeBackendClientResources{}
+	handler := NewResourcesHandler(backendClient)
+
+	_, err := handler.ReadResource(context.Background(), "agenthub://registry/search/document")
+
+	if err != nil {
+		t.Fatalf("ReadResource retornou erro inesperado: %v", err)
+	}
+	if backendClient.searchQuery != "document" {
+		t.Errorf("esperava query legada, obteve %q", backendClient.searchQuery)
 	}
 }

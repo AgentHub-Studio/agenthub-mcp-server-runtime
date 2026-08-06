@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/tenant"
@@ -197,13 +198,16 @@ func (c *BackendClient) ListPromptTemplates(ctx context.Context) ([]PromptTempla
 	return result.Content, nil
 }
 
-// SearchPackages performs a text search across PUBLIC registry packages.
-// Calls GET /api/packages/search?q=...&type=... on the backend.
+// SearchPackages performs a registry search across PUBLIC packages.
+// Calls GET /api/registry/search?q=...&type=... on the backend.
 func (c *BackendClient) SearchPackages(ctx context.Context, query string, pkgType string) ([]PackageSearchDTO, error) {
-	u := fmt.Sprintf("%s/api/packages/search?q=%s&size=20", c.baseURL, query)
+	params := url.Values{}
+	params.Set("q", query)
+	params.Set("size", "20")
 	if pkgType != "" {
-		u += "&type=" + pkgType
+		params.Set("type", pkgType)
 	}
+	u := fmt.Sprintf("%s/api/registry/search?%s", c.baseURL, params.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

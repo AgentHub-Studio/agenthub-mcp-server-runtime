@@ -21,6 +21,8 @@ import (
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/tenant"
 )
 
+const httpReadHeaderTimeout = 5 * time.Second
+
 // MessageProcessor defines the interface for processing a JSON-RPC request
 // and returning a response. Implemented by MCPServer.
 type MessageProcessor interface {
@@ -29,9 +31,9 @@ type MessageProcessor interface {
 
 // protectedResourceMetadata is the RFC 9728 Protected Resource Metadata document.
 type protectedResourceMetadata struct {
-	Resource             string   `json:"resource"`
-	AuthorizationServers []string `json:"authorization_servers"`
-	ScopesSupported      []string `json:"scopes_supported"`
+	Resource               string   `json:"resource"`
+	AuthorizationServers   []string `json:"authorization_servers"`
+	ScopesSupported        []string `json:"scopes_supported"`
 	BearerMethodsSupported []string `json:"bearer_methods_supported"`
 }
 
@@ -95,12 +97,17 @@ func (s *HTTPServer) registerRoutes() {
 
 // Start starts the HTTP server on the configured port.
 func (s *HTTPServer) Start() error {
-	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: s.router,
-	}
+	s.server = s.newHTTPServer()
 	log.Printf("HTTPServer: starting on port %d", s.port)
 	return s.server.ListenAndServe()
+}
+
+func (s *HTTPServer) newHTTPServer() *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%d", s.port),
+		Handler:           s.router,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+	}
 }
 
 // Stop performs a graceful shutdown of the HTTP server.
@@ -136,7 +143,7 @@ func (s *HTTPServer) protectedResourceMetadataHandler(c *gin.Context) {
 	}
 
 	doc := protectedResourceMetadata{
-		Resource:             resource,
+		Resource:               resource,
 		BearerMethodsSupported: []string{"header"},
 	}
 

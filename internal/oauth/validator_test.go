@@ -137,6 +137,38 @@ func TestValidator_DevePassarSemValidacaoQuandoDesabilitado(t *testing.T) {
 	}
 }
 
+func TestValidator_BuildJWKSURLEscapesTenantID(t *testing.T) {
+	v := NewValidator("https://keycloak.test/realms/{tenantId}/protocol/openid-connect/certs", "")
+
+	got := v.buildJWKSURL("tenant?next=/admin")
+	want := "https://keycloak.test/realms/tenant%3Fnext=%2Fadmin/protocol/openid-connect/certs"
+
+	if got != want {
+		t.Fatalf("unexpected JWKS URL: got %q, want %q", got, want)
+	}
+}
+
+func TestValidator_FetchJWKSRejectsUnsafeURL(t *testing.T) {
+	v := NewValidator("https://keycloak.test/certs", "")
+	tc := &tenantCache{keys: make(map[string]*rsa.PublicKey)}
+
+	cases := []string{
+		"",
+		"file:///etc/passwd",
+		"https:///realms/test/certs",
+		"https://user:pass@keycloak.test/certs",
+		"http://keycloak.test/certs\nX-Injected: true",
+	}
+
+	for _, rawURL := range cases {
+		t.Run(rawURL, func(t *testing.T) {
+			if err := v.fetchJWKS(tc, rawURL); err == nil {
+				t.Fatal("expected unsafe JWKS URL to be rejected")
+			}
+		})
+	}
+}
+
 func TestValidator_DeveRejeitarTokenComAssinaturaInvalida(t *testing.T) {
 	key1 := generateTestKey(t)
 	key2 := generateTestKey(t)

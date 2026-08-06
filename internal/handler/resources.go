@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/AgentHub-Studio/agenthub-mcp-server-runtime/internal/backend"
@@ -15,8 +16,12 @@ import (
 // kbURIPrefix is the URI prefix used to identify knowledge bases.
 const kbURIPrefix = "agenthub://kb/"
 
-// registrySearchURIPrefix is the URI prefix used for registry package searches.
-const registrySearchURIPrefix = "agenthub://registry/search/"
+const (
+	// registrySearchURI is the canonical URI for registry package searches.
+	registrySearchURI = "agenthub://registry/search"
+	// legacyRegistrySearchURIPrefix remains readable for existing MCP clients.
+	legacyRegistrySearchURIPrefix = registrySearchURI + "/"
+)
 
 // BackendClientResourcesIface defines the backend operations used by the resources handler.
 type BackendClientResourcesIface interface {
@@ -51,9 +56,9 @@ func (h *ResourcesHandlerImpl) ListResources(ctx context.Context) ([]mcp.Resourc
 	}
 
 	// Expose registry search capability as a static resource template.
-	// Clients read agenthub://registry/search/{query} to get matching packages.
+	// Clients read agenthub://registry/search?q={query} to get matching packages.
 	resources = append(resources, mcp.Resource{
-		URI:         registrySearchURIPrefix + "{query}",
+		URI:         registrySearchURI + "?q={query}",
 		Name:        "Registry Package Search",
 		Description: "Search the AgentHub public registry. Replace {query} with your search term to find agents, skills, tools, and knowledge bases.",
 		MIMEType:    "application/json",
@@ -65,10 +70,15 @@ func (h *ResourcesHandlerImpl) ListResources(ctx context.Context) ([]mcp.Resourc
 // ReadResource returns the content of a resource by URI.
 // Supported URI formats:
 //   - agenthub://kb/{uuid}               — Knowledge Base metadata
-//   - agenthub://registry/search/{query} — Registry package search results
+//   - agenthub://registry/search?q={query} — Registry package search results
+//   - agenthub://registry/search/{query}   — Legacy registry search results
 func (h *ResourcesHandlerImpl) ReadResource(ctx context.Context, uri string) (*mcp.ResourceContent, error) {
-	if strings.HasPrefix(uri, registrySearchURIPrefix) {
-		return h.readRegistrySearch(ctx, uri)
+	query, isRegistrySearch, err := registrySearchQuery(uri)
+	if isRegistrySearch {
+		if err != nil {
+			return nil, err
+		}
+		return h.readRegistrySearch(ctx, uri, query)
 	}
 	return h.readKnowledgeBase(ctx, uri)
 }
@@ -105,12 +115,7 @@ func (h *ResourcesHandlerImpl) readKnowledgeBase(ctx context.Context, uri string
 }
 
 // readRegistrySearch performs a package search and returns results as JSON.
-// The URI must be in the format agenthub://registry/search/{query}.
-func (h *ResourcesHandlerImpl) readRegistrySearch(ctx context.Context, uri string) (*mcp.ResourceContent, error) {
-	query := strings.TrimPrefix(uri, registrySearchURIPrefix)
-	if query == "" {
-		return nil, fmt.Errorf("URI inválido: query de busca não pode ser vazia")
-	}
+func (h *ResourcesHandlerImpl) readRegistrySearch(ctx context.Context, uri, query string) (*mcp.ResourceContent, error) {
 
 	packages, err := h.backendClient.SearchPackages(ctx, query, "")
 	if err != nil {
@@ -131,6 +136,29 @@ func (h *ResourcesHandlerImpl) readRegistrySearch(ctx context.Context, uri strin
 		MIMEType: "application/json",
 		Text:     string(results),
 	}, nil
+}
+
+// registrySearchQuery accepts the canonical query-string URI and the legacy
+// path-based URI while distinguishing unrelated resources.
+func registrySearchQuery(uri string) (query string, isRegistrySearch bool, err error) {
+	if strings.HasPrefix(uri, legacyRegistrySearchURIPrefix) {
+		query = strings.TrimPrefix(uri, legacyRegistrySearchURIPrefix)
+		if query == "" {
+			return "", true, fmt.Errorf("URI inválido: query de busca não pode ser vazia")
+		}
+		return query, true, nil
+	}
+
+	parsed, parseErr := url.Parse(uri)
+	if parseErr != nil || parsed.Scheme != "agenthub" || parsed.Host != "registry" || parsed.Path != "/search" {
+		return "", false, nil
+	}
+
+	query = parsed.Query().Get("q")
+	if query == "" {
+		return "", true, fmt.Errorf("URI inválido: query de busca não pode ser vazia")
+	}
+	return query, true, nil
 }
 
 // kbToResource converts a KnowledgeBaseDTO to an MCP Resource.

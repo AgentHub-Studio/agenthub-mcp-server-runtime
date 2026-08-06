@@ -213,3 +213,33 @@ func TestBackendClient_DeveRetornarErroParaKBNaoEncontrada(t *testing.T) {
 		t.Fatal("esperava erro para knowledge base não encontrada (404)")
 	}
 }
+
+func TestBackendClient_DeveBuscarRegistryPelaRotaCanonica(t *testing.T) {
+	calledPath := ""
+	calledQuery := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledPath = r.URL.Path
+		calledQuery = r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"content": []PackageSearchDTO{{ID: "pkg-1", Slug: "document-search"}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewBackendClient(server.URL, nil)
+	packages, err := client.SearchPackages(context.Background(), "document search & retrieval", "SKILL")
+
+	if err != nil {
+		t.Fatalf("SearchPackages retornou erro inesperado: %v", err)
+	}
+	if calledPath != "/api/registry/search" {
+		t.Errorf("rota incorreta chamada: %s", calledPath)
+	}
+	if calledQuery != "document search & retrieval" {
+		t.Errorf("query incorreta chamada: %q", calledQuery)
+	}
+	if len(packages) != 1 || packages[0].Slug != "document-search" {
+		t.Errorf("resultado inesperado: %#v", packages)
+	}
+}

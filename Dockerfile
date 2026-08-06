@@ -1,6 +1,6 @@
 # Build multi-stage para agenthub-mcp-server-runtime
 # Stage 1: Builder
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25.12-alpine AS builder
 
 # Instalar dependências de build
 RUN apk add --no-cache git make
@@ -23,6 +23,18 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 # Stage 2: Runtime mínimo
 FROM alpine:latest
+ARG OCI_CREATED="unknown"
+ARG OCI_REVISION="unknown"
+ARG OCI_SOURCE="https://github.com/AgentHub-Studio/agenthub-mcp-server-runtime"
+ARG OCI_VERSION="local"
+LABEL org.opencontainers.image.title="agenthub-mcp-server-runtime" \
+    org.opencontainers.image.description="AgentHub MCP server runtime service" \
+    org.opencontainers.image.source="${OCI_SOURCE}" \
+    org.opencontainers.image.revision="${OCI_REVISION}" \
+    org.opencontainers.image.created="${OCI_CREATED}" \
+    org.opencontainers.image.version="${OCI_VERSION}" \
+    org.opencontainers.image.vendor="AgentHub Studio" \
+    org.opencontainers.image.licenses="Proprietary"
 
 # Instalar certificados CA e dados de timezone
 RUN apk --no-cache add ca-certificates tzdata
